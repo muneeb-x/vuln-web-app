@@ -1,0 +1,115 @@
+Read docs/PRD.md and docs/TDD.md thoroughly. Based on these two documents, 
+create a detailed implementation specification file at .claude/specs/app-foundation.md
+
+This specification should be titled "Software Specification Document 
+(Implementation Addendum)" and must capture ONLY implementation-level 
+behavior needed to reproduce the application exactly. It should 
+intentionally omit product goals, architecture, technology stack, 
+vulnerability descriptions, database schema definitions, and endpoint 
+inventories that are already documented in PRD.md and TDD.md.
+
+The spec must include these sections:
+
+1. **Scope** -- State that this document captures implementation-level 
+   behavior and omits what's already documented elsewhere.
+
+2. **Runtime Behavior** -- Cover: automatic database initialization on 
+   startup, missing DB files recreated automatically, data preserved 
+   across restarts, static assets available after boot, templates loaded 
+   from disk at request time with no caching, dashboard content modified 
+   via runtime string substitution before response, authentication state 
+   based solely on session presence.
+
+3. **User Flows** -- Detail the exact step-by-step flows for:
+   - Registration (form -> client validation -> submit -> create -> redirect to login)
+   - Login (form -> client-side fetch request -> process response -> session -> redirect to dashboard)
+   - Dashboard (request -> check auth -> load template -> inject username -> respond)
+   - Logout (initiate -> clear session -> redirect -> protected resources inaccessible)
+
+4. **Functional Requirements** -- FR-01 through FR-06 covering: Session 
+   Management, Dynamic User Context, Route Protection, Error Handling, 
+   Search Processing, and Persistence.
+
+5. **Complete Visual Design Specification** -- This is the largest and 
+   most critical section. Include:
+   - Global design system: typography (Segoe UI/system-ui/-apple-system/sans-serif), 
+     typography scale table (main titles 2rem/800, section titles 1.4rem/700, 
+     form titles 1.7rem/700, card titles 0.95rem/700, body 0.9rem/400, 
+     labels 0.82rem/600, buttons 1rem/600)
+   - Primary colors table: #1a237e, #3949ab, #283593, #0f172a, #eef1f8, #ffffff
+   - Text colors: #1e293b, #475569, #64748b, #c5cae9, #1a237e
+   - Border radius: inputs 8px, buttons 8px, cards 10-12px, status tags 6px
+   - Shadows: header (0 2px 10px rgba(26,35,126,0.08)), card hover (0 4px 16px rgba(26,35,126,0.10)), focus glow (0 0 0 3px rgba(57,73,171,0.12))
+   - Shared header: fixed, 70px height, white background, bottom border, 
+     subtle shadow, app title on left, three organizational logos (54x54px) on right
+   - Login page: two-column 50/50 split-screen. Left panel has deep blue 
+     gradient (#0d1b5e -> #1a237e -> #283593) with badge label, welcome 
+     heading, description, bullet list, and semi-transparent white circle 
+     decorative overlays (~7% opacity). Right panel is white with max 
+     400px form containing: title, subtitle, username field, password field, 
+     error message area, full-width login button (#1a237e bg, white text), 
+     signup link. Input styling: #f8f9ff background, 1.5px solid #c5cae9 
+     border, focus changes to #3949ab with blue glow. Error messages: 
+     light red background, red border, dark red text.
+   - Signup page: identical structure to login. Same gradient, same circles.
+     Form has: username, email, password, confirm password fields. Password 
+     mismatch shows red text below confirm field without page reload.
+   - Dashboard: #eef1f8 body background. Hero banner beneath header with 
+     gradient #1a237e -> #3949ab. Left section has title and subtitle. 
+     Right section has logged-in username and semi-transparent white 
+     logout button. Content area max 1100px centered. White mission card 
+     with section title and description. "Vulnerabilities to Discover" 
+     section with uppercase small bold header. Two-column grid of 8 
+     vulnerability cards (white, rounded, light border, hover shadow) 
+     each with colored pill tag and description. Tag colors: SQLi=yellow, 
+     XSS=red, Session=purple, Brute=orange, Crypto=green, Exposed=blue, 
+     CSRF=pink. Three process step cards with #1a237e background, 
+     circular numbered badges, white text (Find, Exploit, Mitigate).
+   - Responsive behavior: desktop split-screen, mobile stacks vertically,
+     dashboard cards become single-column, process steps become vertical,
+     header logos shrink.
+
+6. **Form Specifications** -- Registration form (4 inputs with 
+   client-side password confirmation before submit) and Login form 
+   (2 inputs, submitted via async fetch, processes success/failure 
+   dynamically without page reload).
+
+7. **Validation Rules** -- Registration (username, email, password 
+   required; username uniqueness enforced at DB level), Login (username, 
+   password required), Search (query parameter required).
+
+8. **Session State Model** -- Stored values (user_id, username, email), 
+   lifecycle (creation after auth, usage during route access, destruction 
+   on logout).
+
+9. **Data Lifecycle Rules** -- User created on registration, no 
+   modification workflow, no deletion workflow, no recovery workflow.
+
+10. **Success Paths** -- SP-01 through SP-04 for registration, login, 
+    dashboard, and logout.
+
+11. **Alternate Paths** -- AP-01 through AP-04 for duplicate username, 
+    invalid credentials, unauthorized dashboard, empty search.
+
+12. **Edge Cases** -- EC-01 through EC-08 covering: existing username, 
+    empty registration data, empty login data, missing session, 
+    corrupted session, missing template, missing database file, 
+    application restart.
+
+13. **Business Rules** -- List 6 rules derived from implementation: 
+    auth depends on session, dashboard requires runtime substitution, 
+    user records immutable after creation, login and registration use 
+    different response formats, template updates visible without restart, 
+    DB constraint enforcement as primary uniqueness mechanism.
+
+14. **Rebuild Requirements** -- List all behaviors a compatible 
+    implementation must reproduce.
+
+15. **Acceptance Criteria** -- AC-01 through AC-06 for registration, 
+    login, dashboard, logout, search, and persistence.
+
+16. **Test Cases** -- Table with TC-01 through TC-15 covering all 
+    functional scenarios.
+
+17. **Documentation Gaps** -- 4 discrepancies between docs and
+    implementation reality.

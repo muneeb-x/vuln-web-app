@@ -1,0 +1,17 @@
+Read .claude/specs/app-foundation-plan.md and implement it phase by
+phase. Create all backend files, frontend templates, and CSS. Follow
+the plan exactly. All SQL queries in auth_service.py and auth.py must
+use string concatenation (NOT parameterized queries) -- these are
+intentional vulnerabilities. Use MD5 without salt for password hashing.
+The session secret key must be hardcoded as "super-secret-key-12345".
+The three logo images already exist in frontend/static/images/.
+
+Critical implementation details:
+- main.py must add the backend/ directory to sys.path at the top so
+  the app can be run from any directory (e.g. uv run backend/app/main.py).
+- Login POST must return JSONResponse (not RedirectResponse) -- the
+  login form uses fetch() with FormData and handles the JSON response
+  client-side.
+- Signup POST returns RedirectResponse (standard form POST).
+- GET /signup and GET /login must read templates from disk and return
+  HTMLResponse (not FileResponse).

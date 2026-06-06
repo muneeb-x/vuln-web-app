@@ -1,0 +1,155 @@
+Read docs/PRD.md, docs/TDD.md, and .claude/specs/app-foundation.md.
+Based on these documents, write a detailed step-by-step implementation
+plan and save it as the file .claude/specs/app-foundation-plan.md.
+
+IMPORTANT: This task is ONLY about writing a plan document. Do NOT
+create any source code files, directories, templates, stylesheets, or
+configuration files. Do NOT implement any part of the plan. The only
+file you should create is .claude/specs/app-foundation-plan.md.
+
+The plan document must describe how to produce an intentionally
+vulnerable web application for security education with these 8
+deliberate vulnerabilities:
+1. SQL Injection in login and signup via string concatenation
+2. Stored XSS via unescaped username on dashboard
+3. Reflected XSS via unescaped query parameter in search
+4. Session Hijacking via hardcoded weak secret key
+5. Weak Password Storage via MD5 without salt
+6. Exposed Database via unauthenticated /download/db endpoint
+7. No Rate Limiting on any endpoint
+8. CSRF via missing token validation on all forms
+
+The plan document should be organized into these implementation phases:
+
+**Phase 1: Project Structure**
+- The backend directory structure to create:
+  backend/app/main.py
+  backend/app/__init__.py (empty)
+  backend/app/core/__init__.py (empty)
+  backend/app/core/security.py
+  backend/app/db/__init__.py (empty)
+  backend/app/db/session.py
+  backend/app/services/__init__.py (empty)
+  backend/app/services/auth_service.py
+  backend/app/api/__init__.py (empty)
+  backend/app/api/routes/__init__.py (empty)
+  backend/app/api/routes/auth.py
+- A separate backend/pyproject.toml for the backend package
+  using hatchling build system with these dependencies: 
+  fastapi>=0.109.0, uvicorn>=0.27.0, python-multipart>=0.0.6, 
+  itsdangerous>=2.0.0. Include pytest as optional dev dependency.
+- The frontend directory structure:
+  frontend/templates/ (for login.html, signup.html, dashboard.html)
+  frontend/static/css/ (for styles.css)
+  frontend/static/images/ (logo files already present)
+
+**Phase 2: Database Layer**
+- session.py: SQLite connection to vulnerable_app.db at project root.
+  Use sqlite3.Row factory. init_db() creates users table 
+  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, 
+  email TEXT, password TEXT) with CREATE TABLE IF NOT EXISTS.
+  check_same_thread=False on connection.
+
+**Phase 3: Security Utilities**
+- security.py: Two functions using hashlib.md5 WITHOUT salt:
+  hash_password(password: str) -> str: returns md5 hexdigest
+  verify_password(plain: str, hashed: str) -> bool: compares md5 hexdigests
+
+**Phase 4: Business Logic (auth_service.py)**
+- signup function: receives username, email, password via Form params.
+  Validates all fields present. Hashes password with hash_password().
+  Builds INSERT query via STRING CONCATENATION (vulnerability #1):
+  "INSERT INTO users (username, email, password) VALUES ('" + username + "', ...)"
+  Returns RedirectResponse to /login on success.
+  Catches UNIQUE constraint errors and returns "Username already exists".
+- login function: receives request, username, password via Form params.
+  Validates fields. Hashes password. Builds SELECT query via STRING
+  CONCATENATION (vulnerability #1):
+  "SELECT * FROM users WHERE username = '" + username + "' AND password = '" + hashed + "'"
+  On match: sets session user_id, username, email. Returns
+  JSONResponse with {"success": true, "redirect": "/welcome"} (so
+  frontend JS can redirect via window.location.href).
+  On failure: returns JSONResponse with 401 status and error message
+  (so frontend JS can show error inline without page reload).
+
+**Phase 5: Route Handlers (auth.py)**
+- All routes on a single APIRouter
+- GET / -> RedirectResponse to /signup (302)
+- GET /signup -> Read signup.html from disk, return HTMLResponse
+- POST /signup -> calls auth_service.signup()
+- GET /login -> Read login.html from disk, return HTMLResponse
+- POST /login -> calls auth_service.login() with request object
+- GET /download/db -> FileResponse serving vulnerable_app.db with NO 
+  auth check (vulnerability #6)
+- GET /search?q= -> builds SQL query via string concatenation with 
+  LIKE '%' + q + '%'. Returns HTMLResponse with results. The query 
+  parameter q is directly interpolated into the HTML without escaping
+  (vulnerability #3). On exception, returns error string with 
+  str(e) exposed.
+- GET /welcome -> checks 'user_id' in request.session, redirects to 
+  /login if missing. Reads dashboard.html from disk, does 
+  html.replace('{{username}}', username), returns HTMLResponse 
+  (vulnerability #2 -- stored XSS)
+- GET /logout -> request.session.clear(), RedirectResponse to /login
+
+**Phase 6: Application Entry Point (main.py)**
+- At the top of main.py, add the backend/ directory to sys.path so
+  that the 'app' package resolves correctly regardless of which
+  directory the script is launched from (e.g. uv run backend/app/main.py
+  from project root or python app/main.py from backend/).
+- Import FastAPI, configure app
+- Add SessionMiddleware with hardcoded SECRET_KEY = "super-secret-key-12345"
+  (vulnerability #4)
+- Include the auth router
+- Mount static files: /static/css -> frontend/static/css,
+  /static/images -> frontend/static/images
+- Call init_db() at module level
+- Uvicorn run on 0.0.0.0:3001, PORT configurable via env var
+
+**Phase 7: Frontend Templates**
+- All three pages share: fixed header with app title on left
+  and three logos on right.
+
+- login.html: Split-screen (left gradient panel with Security Lab
+  content, right white panel with login form). Form uses JavaScript
+  fetch() to POST /login with FormData. Parses JSON response. On
+  success (data.success), redirects to /welcome via
+  window.location.href. On failure, shows error message inline from
+  data.error without page reload.
+
+- signup.html: Same split-screen layout. Standard HTML form with 
+  action="/signup" method="POST". Four fields: username, email, 
+  password, confirm_password. Client-side JS validates password match 
+  before submit, shows inline error span if mismatch.
+
+- dashboard.html: Dashboard layout with blue gradient banner showing 
+  "Security Vulnerability Lab" title and "Logged in as {{username}}" 
+  with logout button. Content area has mission card, 8 vulnerability 
+  cards in 2-column grid with colored tags, and 3 process step cards.
+
+**Phase 8: Styling (styles.css)**
+- Complete responsive styling matching the visual design specification
+- All colors, typography, spacing, shadows as defined in the spec
+
+**Phase 9: CLAUDE.md**
+- A CLAUDE.md at project root documenting: project context,
+  development commands, architecture overview, vulnerability map,
+  frontend-backend integration, security education context, and
+  specification hierarchy.
+
+**Phase 10: Testing and Validation**
+- Describe the verification steps: start the app, verify all pages
+  load, test signup and login flows end-to-end, verify session
+  protection on /welcome, verify logout clears session, verify
+  /download/db serves database without auth, verify /search reflects
+  input in response.
+
+Each phase in the plan document should list the exact files to
+create/modify and the key implementation details. Emphasize that
+vulnerabilities are INTENTIONAL and must use string concatenation
+(not parameterized queries) for all SQL queries in auth_service.py
+and auth.py.
+
+Remember: output ONLY the plan document at
+.claude/specs/app-foundation-plan.md. Do NOT create or modify any
+other files.

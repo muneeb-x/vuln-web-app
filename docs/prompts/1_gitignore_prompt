@@ -1,0 +1,2 @@
+Create a .gitignore file suitable for a Python/FastAPI project. 
+Ignore: .venv/, __pycache__/, *.db, *.sqlite, *.sqlite3, .env, .env.local, .DS_Store, Thumbs.db, .vscode/, .idea/, dist/, build/, *.egg-info/
