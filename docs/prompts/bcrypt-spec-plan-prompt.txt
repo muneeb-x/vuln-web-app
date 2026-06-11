@@ -1,0 +1,14 @@
+Read .claude/specs/bcrypt-password-hashing.md (and re-read docs/TDD.md,
+backend/app/core/security.py, backend/app/services/auth_service.py,
+backend/pyproject.toml, and the root pyproject.toml).
+
+Based on the spec, write a detailed, phase-by-phase implementation plan and save it
+ONLY as .claude/specs/bcrypt-password-hashing-plan.md.
+
+Do NOT write or modify any source code in this step — produce the plan document only.
+The plan must list, per phase: the bcrypt dependency additions, the exact new
+security.py (hash_password using bcrypt work factor >= 12; verify_password wrapping
+bcrypt.checkpw in try/except so legacy MD5 values return False), the auth_service.login()
+change to compare via verify_password against the stored hash, the DB-reset/re-register
+migration note, and the verification steps from the spec. Do NOT change SQL query
+construction — that is the SQLi task. Preserve all other intentional vulnerabilities.
