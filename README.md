@@ -29,7 +29,7 @@ vuln-web-app/
 │   ├── app/
 │   │   ├── main.py                  # Entry point — starts the server
 │   │   ├── core/
-│   │   │   └── security.py          # Password hashing (MD5, no salt)
+│   │   │   └── security.py          # Password hashing (bcrypt, work factor 12)
 │   │   ├── db/
 │   │   │   └── session.py           # Database connection and schema setup
 │   │   ├── services/
@@ -39,15 +39,17 @@ vuln-web-app/
 │   └── pyproject.toml               # Backend package config
 ├── frontend/
 │   ├── templates/
-│   │   ├── login.html               # Login page (fetch-based)
-│   │   ├── signup.html              # Registration page (form POST)
-│   │   └── dashboard.html           # Protected dashboard
+│   │   ├── login.html               # Login page (fetch-based, theme toggle)
+│   │   ├── signup.html              # Registration page (form POST, theme toggle)
+│   │   └── dashboard.html           # Protected dashboard (theme toggle)
 │   └── static/
-│       ├── css/styles.css           # Application styling
+│       ├── css/styles.css           # Application styling (light/dark themes)
 │       └── images/                  # Organization logos (PUCIT, Excaliat, FCCU)
 ├── docs/
 │   ├── PRD.md                       # Product requirements
-│   └── TDD.md                       # Technical design
+│   ├── TDD.md                       # Technical design
+│   └── prompts/                     # Prompts used to generate specs & plans
+├── .claude/specs/                   # Feature specs and implementation plans
 ├── pyproject.toml                   # Root project config
 └── vulnerable_app.db                # SQLite database (auto-created)
 ```
@@ -101,16 +103,22 @@ The app starts at **http://localhost:3001**. The database file (`vulnerable_app.
 
 ## Intentional Vulnerabilities
 
-| # | Vulnerability | OWASP Category | Location |
-|---|---------------|----------------|----------|
-| 1 | SQL Injection | A03:2021 - Injection | `auth_service.py` — string concatenation in queries |
-| 2 | Stored XSS | A03:2021 - Injection | `auth.py` — unescaped username on dashboard |
-| 3 | Reflected XSS | A03:2021 - Injection | `auth.py` — unescaped query param in search |
-| 4 | Session Hijacking | A07:2021 - Auth Failures | `main.py` — hardcoded secret key |
-| 5 | Weak Password Storage | A02:2021 - Crypto Failures | `security.py` — MD5 without salt |
-| 6 | Exposed Database | A01:2021 - Access Control | `auth.py` — unauthenticated `/download/db` |
-| 7 | No Rate Limiting | A07:2021 - Auth Failures | Global — no throttling middleware |
-| 8 | CSRF | A01:2021 - Access Control | Global — no CSRF tokens on forms |
+| # | Vulnerability | OWASP Category | Location | Status |
+|---|---------------|----------------|----------|--------|
+| 1 | SQL Injection | A03:2021 - Injection | `auth_service.py` — string concatenation in queries | Open |
+| 2 | Stored XSS | A03:2021 - Injection | `auth.py` — unescaped username on dashboard | Open |
+| 3 | Reflected XSS | A03:2021 - Injection | `auth.py` — unescaped query param in search | Open |
+| 4 | Session Hijacking | A07:2021 - Auth Failures | `main.py` — hardcoded secret key | Open |
+| 5 | Weak Password Storage | A02:2021 - Crypto Failures | `security.py` — was MD5 (no salt); now bcrypt (cost 12) | **Closed** |
+| 6 | Exposed Database | A01:2021 - Access Control | `auth.py` — unauthenticated `/download/db` | Open |
+| 7 | No Rate Limiting | A07:2021 - Auth Failures | Global — no throttling middleware | Open |
+| 8 | CSRF | A01:2021 - Access Control | Global — no CSRF tokens on forms | Open |
+
+### Fix Notes — Vulnerability #5 (Bcrypt)
+
+- `security.py` now uses bcrypt with `BCRYPT_ROUNDS = 12`. `hash_password()` returns a 60-char `$2b$12$…` string; `verify_password()` wraps `bcrypt.checkpw` in `try/except` so a legacy MD5 row returns `False` instead of crashing.
+- `auth_service.login()` no longer embeds the password hash in the SQL `WHERE` clause (bcrypt can't be matched with `=`). It fetches the user by username and compares with `verify_password()` in Python. The username branch of that query **remains string-concatenated**, so VULN-1 is unchanged.
+- After pulling this change, run `uv sync` to install `bcrypt`, then delete `vulnerable_app.db` and re-register — legacy MD5 accounts can no longer authenticate.
 
 ---
 
@@ -124,6 +132,7 @@ The app starts at **http://localhost:3001**. The database file (`vulnerable_app.
 - University-branded header with organization logos
 - SQLite database with automatic initialization
 - Database auto-recreated if deleted (on restart)
+- **Light / dark theme toggle** on login, signup, and dashboard pages — preference saved in `localStorage` under the key `theme`, restored before first paint to avoid FOUC, falls back to `prefers-color-scheme`, keyboard accessible, themed via CSS custom properties and a `data-theme` attribute on `<html>`
 
 ---
 
@@ -179,38 +188,44 @@ Delete `vulnerable_app.db` from the project root and restart the app. The databa
 
 ## Future Enhancements
 
+### Completed
+
+| # | Feature / Fix | Branch | Notes |
+|---|---------------|--------|-------|
+| 1 | Dark Mode Toggle | `feature/dark-mode-toggle` | Light/dark themes with `localStorage` persistence, `prefers-color-scheme` fallback, no FOUC; see `.claude/specs/dark-mode-toggle.md` |
+| 2 | Bcrypt Password Hashing | `fix/bcrypt-password-hashing` | Closes VULN-5. MD5 replaced with bcrypt (cost 12); `login()` verifies in Python; see `.claude/specs/bcrypt-password-hashing.md` |
+
 ### Feature Enhancements
 
 | # | Feature | Description |
 |---|---------|-------------|
-| 1 | Dark Mode Toggle | Switch between light and dark themes with preference saved in localStorage |
-| 2 | Remember Me Checkbox | Keep session alive across browser restarts using persistent cookies |
-| 3 | Password Strength Meter | Real-time visual indicator showing password strength during signup |
-| 4 | Forgot Password (Email Link) | Send a password reset link to the user's registered email |
-| 5 | Email Verification on Signup | Send a verification email with a token link before activating the account |
-| 6 | User Profile Page | View and edit username, email, and avatar from a settings page |
-| 7 | Change Password | Allow authenticated users to update their password from the profile page |
-| 8 | Continue with Google (OAuth 2.0) | Sign up and login using Google account via OAuth 2.0 flow |
-| 9 | Continue with GitHub (OAuth 2.0) | Sign up and login using GitHub account via OAuth 2.0 flow |
-| 10 | Role-Based Access Control | Add admin and user roles with different dashboard permissions |
-| 11 | MFA via Authenticator App (TOTP) | Enable two-factor auth using Google Authenticator or Authy with QR code setup |
-| 12 | MFA Recovery Codes | Generate and display one-time backup codes during MFA enrollment |
-| 13 | OTP via Email | Send a one-time passcode to the user's email as a second authentication factor |
-| 14 | OTP via SMS | Send a one-time passcode to the user's registered phone number via Twilio |
-| 15 | QR Code Login | Scan a QR code on the login page from an authenticated mobile device to log in |
-| 16 | Session Management Dashboard | View and revoke active sessions across devices from the profile page |
-| 17 | Account Lockout | Lock the account after N failed login attempts with a cooldown timer |
-| 18 | Rate Limiting | Throttle requests per IP/user using middleware to prevent brute force attacks |
-| 19 | CAPTCHA on Login | Add Google reCAPTCHA or hCaptcha to the login form after failed attempts |
-| 20 | Audit Log | Record and display login attempts, password changes, and security events |
-| 21 | CSRF Protection | Add CSRF tokens to all forms to prevent cross-site request forgery |
-| 22 | Content Security Policy | Set CSP headers to mitigate XSS and injection attacks |
-| 23 | Account Deletion | Allow users to permanently delete their account and all associated data |
-| 24 | Admin User Management | Admin panel to view, deactivate, or delete user accounts |
-| 25 | API Key Authentication | Generate and manage personal API keys for programmatic access |
-| 26 | Magic Link Login | Passwordless login via a one-time link sent to the user's email |
-| 27 | Passkey / WebAuthn | Register and authenticate using biometrics or hardware security keys |
-| 28 | SSO with SAML | Enterprise single sign-on integration using SAML 2.0 protocol |
+| 1 | Remember Me Checkbox | Keep session alive across browser restarts using persistent cookies |
+| 2 | Password Strength Meter | Real-time visual indicator showing password strength during signup |
+| 3 | Forgot Password (Email Link) | Send a password reset link to the user's registered email |
+| 4 | Email Verification on Signup | Send a verification email with a token link before activating the account |
+| 5 | User Profile Page | View and edit username, email, and avatar from a settings page |
+| 6 | Change Password | Allow authenticated users to update their password from the profile page |
+| 7 | Continue with Google (OAuth 2.0) | Sign up and login using Google account via OAuth 2.0 flow |
+| 8 | Continue with GitHub (OAuth 2.0) | Sign up and login using GitHub account via OAuth 2.0 flow |
+| 9 | Role-Based Access Control | Add admin and user roles with different dashboard permissions |
+| 10 | MFA via Authenticator App (TOTP) | Enable two-factor auth using Google Authenticator or Authy with QR code setup |
+| 11 | MFA Recovery Codes | Generate and display one-time backup codes during MFA enrollment |
+| 12 | OTP via Email | Send a one-time passcode to the user's email as a second authentication factor |
+| 13 | OTP via SMS | Send a one-time passcode to the user's registered phone number via Twilio |
+| 14 | QR Code Login | Scan a QR code on the login page from an authenticated mobile device to log in |
+| 15 | Session Management Dashboard | View and revoke active sessions across devices from the profile page |
+| 16 | Account Lockout | Lock the account after N failed login attempts with a cooldown timer |
+| 17 | Rate Limiting | Throttle requests per IP/user using middleware to prevent brute force attacks |
+| 18 | CAPTCHA on Login | Add Google reCAPTCHA or hCaptcha to the login form after failed attempts |
+| 19 | Audit Log | Record and display login attempts, password changes, and security events |
+| 20 | CSRF Protection | Add CSRF tokens to all forms to prevent cross-site request forgery |
+| 21 | Content Security Policy | Set CSP headers to mitigate XSS and injection attacks |
+| 22 | Account Deletion | Allow users to permanently delete their account and all associated data |
+| 23 | Admin User Management | Admin panel to view, deactivate, or delete user accounts |
+| 24 | API Key Authentication | Generate and manage personal API keys for programmatic access |
+| 25 | Magic Link Login | Passwordless login via a one-time link sent to the user's email |
+| 26 | Passkey / WebAuthn | Register and authenticate using biometrics or hardware security keys |
+| 27 | SSO with SAML | Enterprise single sign-on integration using SAML 2.0 protocol |
 
 ### Bug Fixes
 

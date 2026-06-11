@@ -1,0 +1,38 @@
+You are working in the cloned `vuln-web-app` repository (the v0.1.0 base release).
+
+READ first, to ground the spec in the real code and house style:
+- .claude/specs/app-foundation.md     (study its section structure and style)
+- backend/app/core/security.py
+- backend/app/services/auth_service.py   (focus on login() and signup())
+- backend/pyproject.toml
+- pyproject.toml                          (root)
+
+Then CREATE EXACTLY ONE file and nothing else: .claude/specs/bcrypt-password-hashing.md
+Do NOT write any source code, plan file, or modify any existing file.
+
+The spec MUST follow the same documentation style as .claude/specs/app-foundation.md
+and contain these sections, in order:
+  - Title and one-paragraph Overview / Purpose
+  - Scope & Non-Goals (state which of the 8 lab vulnerabilities are IN scope and
+    which intentionally remain unfixed)
+  - Affected Files (exact repository paths)
+  - Functional Requirements (FR-XX), Non-Functional Requirements (NFR-XX)
+  - Success Paths (SP-XX), Edge Cases (EC-XX), Acceptance Criteria (AC-XX)
+  - Test Cases (table: ID | Scenario | Precondition | Expected Result)
+  - Verification Steps (exact commands and URLs)
+
+Fix content:
+Replace the unsalted MD5 in backend/app/core/security.py with bcrypt (work factor >= 12).
+Keep the public functions hash_password(password) and verify_password(plain, hashed).
+verify_password MUST wrap bcrypt.checkpw in try/except so a legacy MD5 value in the DB
+returns False instead of crashing. Specify the auth_service.login() change required: the
+base matches the password hash INSIDE the SQL (WHERE ... AND password = '<hash>'), which
+bcrypt cannot do — so login() must fetch the user by username and compare with
+verify_password() in Python. Specify adding bcrypt to BOTH backend/pyproject.toml and the
+root pyproject.toml, and a DB-reset/re-register migration note (old MD5 accounts cannot
+log in and must re-register). Closes vulnerability #5 only. Do NOT change SQL query
+construction (that is the SQLi task). Include attack/edge test cases: a legacy MD5 row
+returns 401 without crashing; two users with the same password get different hashes; a
+new account's stored hash begins with $2b$.
+
+Output only that one spec file. Confirm the path when done.

@@ -1,0 +1,9 @@
+Read .claude/specs/bcrypt-password-hashing-plan.md and implement it phase by phase,
+following it exactly. Only touch the files the plan names (backend/app/core/security.py,
+backend/app/services/auth_service.py, backend/pyproject.toml, root pyproject.toml).
+Do NOT change any SQL query construction and do NOT alter any other vulnerability.
+
+After implementing, remind me to run `uv sync`, delete vulnerable_app.db, restart, and
+re-register a user; then walk through the plan's verification steps (new hash starts with
+$2b$, correct password logs in, wrong password and a legacy MD5 row both return 401
+without crashing) and report the result.

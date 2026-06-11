@@ -1,9 +1,15 @@
-import hashlib
+import bcrypt
+
+BCRYPT_ROUNDS = 12
 
 
 def hash_password(password: str) -> str:
-    return hashlib.md5(password.encode()).hexdigest()
+    salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return hash_password(plain) == hashed
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
