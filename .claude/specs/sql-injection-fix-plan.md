@@ -1,4 +1,4 @@
-# Implementation Plan — SQL Injection Fix
+# Implementation Plan — SQL Injection Fix (Complete)
 
 **Version:** 1.0.0
 **Last Updated:** June 12, 2026
@@ -10,7 +10,7 @@
 
 ## 0. Plan Overview
 
-This plan implements the SQL injection fix specified in [sql-injection-fix.md](./sql-injection-fix.md). It closes **Vulnerability #1 (SQL Injection)** and **only** that vulnerability. The work is split into **four phases** so each step is small, individually verifiable, and easy to revert.
+This plan implements the SQL injection fix specified in [sql-injection-fix.md](./sql-injection-fix.md). It closes **SQL Injection vulnerabilities in all three locations** (signup, login, and search) and **only** those vulnerabilities. The work is split into **five phases** so each step is small, individually verifiable, and easy to revert.
 
 The six remaining intentional vulnerabilities (VULN-2 Stored XSS, VULN-3 Reflected XSS, VULN-4 Session Hijacking, VULN-6 Exposed DB, VULN-7 No Rate Limiting, VULN-8 No CSRF) MUST remain exploitable after every phase. Each phase ends with an explicit "MUST NOT" callout listing things that would silently close another vulnerability.
 
@@ -20,21 +20,22 @@ The six remaining intentional vulnerabilities (VULN-2 Stored XSS, VULN-3 Reflect
 |---|-------|--------------|------|
 | 1 | Parameterize `signup()` query | `backend/app/services/auth_service.py` | Replace string concatenation in INSERT with `?` placeholders |
 | 2 | Parameterize `login()` query | `backend/app/services/auth_service.py` | Replace string concatenation in SELECT with `?` placeholder |
-| 3 | End-to-end verification | None (read-only) | Walk every Verification Step in spec §10 |
-| 4 | Vulnerability preservation audit | None (read-only) | Confirm the other 6 vulnerabilities still fire |
+| 3 | Parameterize `search_user()` query | `backend/app/api/routes/auth.py` | Replace string concatenation in SELECT with `?` placeholders for LIKE |
+| 4 | End-to-end verification | None (read-only) | Walk every Verification Step in spec §10 |
+| 5 | Vulnerability preservation audit | None (read-only) | Confirm the other 6 vulnerabilities still fire |
 
 ### Files Modified (Authored)
 
-Exactly one source file is declared in spec §3:
+Exactly the two source files declared in spec §3:
 
 - `backend/app/services/auth_service.py`
+- `backend/app/api/routes/auth.py`
 
 ### Files That MUST NOT Be Modified
 
-- `backend/app/main.py` — preserves hardcoded session secret (VULN-4).
-- `backend/app/api/routes/auth.py` — preserves dashboard `{{username}}` substitution (VULN-2), `/search` reflection (VULN-3), open `/download/db` (VULN-6).
-- `backend/app/db/session.py` — schema and connection layer unchanged.
 - `backend/app/core/security.py` — bcrypt password hashing unchanged (VULN-5 already closed).
+- `backend/app/main.py` — preserves hardcoded session secret (VULN-4).
+- `backend/app/db/session.py` — schema and connection layer unchanged.
 - `backend/pyproject.toml`, `pyproject.toml` — no new dependencies required.
 - Any HTML template under `frontend/templates/` or CSS under `frontend/static/`.
 - `CLAUDE.md`, `docs/PRD.md`, `docs/TDD.md`, `.claude/specs/app-foundation.md`, `.claude/specs/sql-injection-fix.md`.
@@ -44,7 +45,7 @@ Exactly one source file is declared in spec §3:
 After each edit, re-confirm:
 
 1. ✅ **VULN-2 Stored XSS.** `auth.py:welcome_page()` still does `html.replace('{{username}}', username)` — not touched.
-2. ✅ **VULN-3 Reflected XSS.** `/search` still interpolates `q` into HTML unescaped — not touched.
+2. ✅ **VULN-3 Reflected XSS.** `/search` still interpolates `q` into HTML unescaped — not touched (SQLi fixed, XSS preserved).
 3. ✅ **VULN-4 Session Hijacking.** `main.py` still contains the literal `"super-secret-key-12345"` — not touched.
 4. ✅ **VULN-5 Weak Password.** Bcrypt hashing (already closed) remains untouched.
 5. ✅ **VULN-6 Exposed DB.** `/download/db` remains unauthenticated — not touched.
@@ -140,12 +141,12 @@ def signup(username: str, email: str, password: str):
 | Query template with `?, ?, ?` | Parameterized placeholders separate SQL from data | FR-01, NFR-01 |
 | `conn.execute(query, [username, email, hashed])` | Values passed as list, not concatenated | FR-01, AC-01 |
 | Comment updated from "VULNERABILITY #1" to "FIXED" | Documents the closure for educational purposes | NFR-03 |
-| All error handling unchanged | Preserves existing error behaviors | FR-03, NFR-06 |
+| All error handling unchanged | Preserves existing error behaviors | FR-04, NFR-06 |
 | Return types and responses unchanged | API stability maintained | NFR-02 |
 
 ### 1.6 What NOT to Change in Phase 1
 
-- **DO NOT** touch `login()`. Its SQL injection fix happens in Phase 2.
+- **DO NOT** touch `login()` or `search_user()`. Their SQL injection fixes happen in Phase 2 and Phase 3.
 - **DO NOT** change the function signature, return types, or error messages.
 - **DO NOT** add any new dependencies (sqlite3 parameterization is built-in).
 - **DO NOT** add input validation or sanitization — that's not the fix for SQLi.
@@ -260,9 +261,9 @@ def login(request: Request, username: str, password: str):
 | Query template with `?` placeholder | Parameterized placeholder separates SQL from data | FR-02, NFR-01 |
 | `conn.execute(query, [username])` | Username passed as list element, not concatenated | FR-02, AC-02 |
 | Comment updated from "VULNERABILITY #1... to preserve VULN-1" to "FIXED" | Documents the closure; removes outdated preservation note | NFR-03 |
-| Password comparison unchanged | Bcrypt verification (VULN-5 already closed) preserved | FR-05, NFR-04 |
-| Session writes unchanged | API stability maintained | FR-04, NFR-02 |
-| Error handling unchanged | No information leakage introduced | FR-03, NFR-06 |
+| Password comparison unchanged | Bcrypt verification (VULN-5 already closed) preserved | FR-06, NFR-04 |
+| Session writes unchanged | API stability maintained | FR-05, NFR-02 |
+| Error handling unchanged | No information leakage introduced | FR-04, NFR-06 |
 
 ### 2.6 What NOT to Change in Phase 2
 
@@ -283,11 +284,111 @@ Expected: prints `imports ok` (no `ImportError` or syntax error).
 
 ---
 
-## Phase 3 — End-to-End Verification
+## Phase 3 — Parameterize `search_user()` Query
+
+### 3.1 Goal
+
+Replace the string-concatenated `SELECT` query with LIKE pattern in `search_user()` with a parameterized query. This closes the SQL injection vector in the search flow while preserving the LIKE partial matching functionality. Critically: the HTML output must still reflect the `q` parameter unescaped to preserve VULN-3 (Reflected XSS).
+
+### 3.2 File to Modify
+
+- `backend/app/api/routes/auth.py`
+
+### 3.3 Current `search_user()` Implementation (L59–82)
+
+```python
+@router.get("/search")
+async def search_user(q: str = ""):
+    if not q:
+        return HTMLResponse(content="<h3>No search query provided</h3>")
+
+    # VULNERABILITY #3: Reflected XSS -- query interpolated into HTML without escaping
+    # SQL also uses string concatenation
+    query = "SELECT username, email FROM users WHERE username LIKE '%" + q + "%' OR email LIKE '%" + q + "%'"
+
+    conn = get_db()
+    try:
+        cursor = conn.execute(query)
+        rows = cursor.fetchall()
+
+        results = ""
+        for row in rows:
+            results += f"<li>{row[0]} ({row[1]})</li>"
+
+        html = f"<h3>Search results for: {q}</h3><ul>{results}</ul>"
+        return HTMLResponse(content=html)
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>Error: {str(e)}</h3>")
+    finally:
+        conn.close()
+```
+
+### 3.4 New `search_user()` Implementation
+
+Replace the function body with:
+
+```python
+@router.get("/search")
+async def search_user(q: str = ""):
+    if not q:
+        return HTMLResponse(content="<h3>No search query provided</h3>")
+
+    # FIXED: SQL Injection closed by using parameterized query
+    # VULNERABILITY #3: Reflected XSS still preserved -- query interpolated into HTML without escaping
+    query = "SELECT username, email FROM users WHERE username LIKE ? OR email LIKE ?"
+
+    conn = get_db()
+    try:
+        cursor = conn.execute(query, [f"%{q}%", f"%{q}%"])
+        rows = cursor.fetchall()
+
+        results = ""
+        for row in rows:
+            results += f"<li>{row[0]} ({row[1]})</li>"
+
+        html = f"<h3>Search results for: {q}</h3><ul>{results}</ul>"
+        return HTMLResponse(content=html)
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>Error: {str(e)}</h3>")
+    finally:
+        conn.close()
+```
+
+### 3.5 Line-by-Line Justification
+
+| Line | Decision | Spec ref |
+|------|----------|----------|
+| Query template with `?` placeholders | Parameterized placeholders separate SQL from data | FR-03, NFR-01 |
+| `conn.execute(query, [f"%{q}%", f"%{q}%"])` | Values passed as list with wildcards in parameters, not query | FR-03, FR-07, AC-03, AC-04 |
+| Comment updated to indicate SQLi fixed but XSS preserved | Documents selective vulnerability closure | NFR-03 |
+| HTML response still uses `{q}` unescaped | Preserves VULN-3 Reflected XSS | FR-08, NFR-03 |
+| LIKE pattern matching unchanged via `%` wildcards | Preserves partial matching behavior | FR-07, NFR-04 |
+| Error handling unchanged | No information leakage introduced | FR-04, NFR-06 |
+
+### 3.6 What NOT to Change in Phase 3
+
+- **DO NOT** escape the `q` parameter in the HTML output (e.g., with `html.escape(q)`). That would close VULN-3.
+- **DO NOT** change the LIKE pattern matching behavior.
+- **DO NOT** change the HTML response format.
+- **DO NOT** add validation or sanitization to the `q` parameter.
+- **DO NOT** modify any other function in the file.
+- **DO NOT** touch the dashboard `{{username}}` substitution (that's VULN-2).
+
+### 3.7 Phase 3 Verification
+
+```bash
+cd backend && uv run python -c "from app.api.routes.auth import router; print('imports ok')" && cd ..
+```
+
+Expected: prints `imports ok` (no `ImportError` or syntax error).
+
+---
+
+## Phase 4 — End-to-End Verification
 
 This phase walks every Verification Step in spec §10 in order. **No edits** are made during this phase; if any step fails, document the failure and return to the offending phase to repair.
 
-### 3.1 Start the Application (spec §10.1)
+### 4.1 Start the Application (spec §10.1)
 
 ```bash
 rm -f vulnerable_app.db
@@ -296,15 +397,16 @@ uv run backend/app/main.py
 
 The server listens on `http://localhost:3001`. Confirm it starts without errors.
 
-### 3.2 Functional Walkthrough (spec §10.2)
+### 4.2 Functional Walkthrough (spec §10.2)
 
 | Step | Action | Expected | Spec ref |
 |------|--------|----------|----------|
-| 3.2.1 | Register `alice` / `alice@test.com` / `pass123` via `/signup` | 302 → `/login` | SP-01, TC-01 |
-| 3.2.2 | `sqlite3 vulnerable_app.db "SELECT username FROM users WHERE username='alice';"` | Returns `alice` | TC-02 |
-| 3.2.3 | `POST /login` as `alice` / `pass123` | JSON `{"success": true, "redirect": "/welcome"}` | SP-02, TC-02 |
+| 4.2.1 | Register `alice` / `alice@test.com` / `pass123` via `/signup` | 302 → `/login` | SP-01, TC-01 |
+| 4.2.2 | `sqlite3 vulnerable_app.db "SELECT username FROM users WHERE username='alice';"` | Returns `alice` | TC-02 |
+| 4.2.3 | `POST /login` as `alice` / `pass123` | JSON `{"success": true, "redirect": "/welcome"}` | SP-02, TC-02 |
+| 4.2.4 | `GET /search?q=alice` | HTML with alice's info | SP-03, TC-14 |
 
-### 3.3 SQL Injection Payload Tests (spec §10.3)
+### 4.3 SQL Injection Payload Tests (spec §10.3)
 
 1. **Classic OR injection in login** (TC-03)
    ```bash
@@ -314,7 +416,7 @@ The server listens on `http://localhost:3001`. Confirm it starts without errors.
    ```
    Expected: HTTP 401, `{"error":"Invalid username or password"}`. No authentication bypass.
 
-2. **Tautology injection** (TC-03)
+2. **Tautology injection in login** (TC-03)
    ```bash
    curl -s -i -X POST http://localhost:3001/login \
         --data-urlencode "username=' OR '1'='1' --" \
@@ -322,7 +424,7 @@ The server listens on `http://localhost:3001`. Confirm it starts without errors.
    ```
    Expected: HTTP 401. No authentication bypass.
 
-3. **Comment-based injection** (TC-03)
+3. **Comment-based injection in login** (TC-03)
    ```bash
    curl -s -i -X POST http://localhost:3001/login \
         --data-urlencode "username=alice' --" \
@@ -330,9 +432,24 @@ The server listens on `http://localhost:3001`. Confirm it starts without errors.
    ```
    Expected: HTTP 401. The literal username `alice' --` does not match any user.
 
-### 3.4 Edge Case Tests (spec §10.4)
+4. **SQLi in signup** (TC-04)
+   ```bash
+   curl -s -i -X POST http://localhost:3001/signup \
+        --data-urlencode "username=test', 'x@x', 'hash') --" \
+        --data-urlencode 'email=sql@x' \
+        --data-urlencode 'password=x'
+   ```
+   Expected: Either successful signup with literal username or validation error. **No injection.**
 
-1. **Single quote in username** (TC-05)
+5. **SQLi in search** (TC-05)
+   ```bash
+   curl -s 'http://localhost:3001/search?q=test'\'' OR '\''1'\''='\''1'\'' --'
+   ```
+   Expected: No results (or results for literal string only). No SQL injection.
+
+### 4.4 Edge Case Tests (spec §10.4)
+
+1. **Single quote in username** (TC-06)
    ```bash
    # Register
    curl -s -i -X POST http://localhost:3001/signup \
@@ -343,10 +460,12 @@ The server listens on `http://localhost:3001`. Confirm it starts without errors.
    curl -s -i -X POST http://localhost:3001/login \
         --data-urlencode "username=o'neill" \
         --data-urlencode 'password=pass123'
+   # Search
+   curl -s "http://localhost:3001/search?q=o'neill"
    ```
-   Expected: Registration succeeds (302 to `/login`), login succeeds (200).
+   Expected: Registration succeeds (302 to `/login`), login succeeds (200), search succeeds (returns result).
 
-2. **SQL keywords in username** (TC-06)
+2. **SQL keywords in username** (TC-07)
    ```bash
    curl -s -i -X POST http://localhost:3001/signup \
         --data-urlencode "username=admin; DROP TABLE users; --" \
@@ -355,7 +474,7 @@ The server listens on `http://localhost:3001`. Confirm it starts without errors.
    ```
    Expected: Either successful signup with literal username or validation error; **no table dropped**.
 
-3. **Empty username** (TC-07)
+3. **Empty username** (TC-08)
    ```bash
    curl -s -i -X POST http://localhost:3001/login \
         --data-urlencode 'username=' \
@@ -363,45 +482,80 @@ The server listens on `http://localhost:3001`. Confirm it starts without errors.
    ```
    Expected: HTTP 401.
 
-### 3.5 Code Inspection (spec §10.6)
+4. **Unicode input** (TC-12)
+   ```bash
+   curl -s -i -X POST http://localhost:3001/signup \
+        --data-urlencode 'username=日本語' \
+        --data-urlencode 'email=test@example.com' \
+        --data-urlencode 'password=パスワード'
+   ```
+   Expected: Registration succeeds (302 to `/login`), login succeeds, search succeeds.
+
+5. **Partial matching in search** (TC-15)
+   ```bash
+   curl -s 'http://localhost:3001/search?q=ali'
+   ```
+   Expected: Returns alice's result (partial match).
+
+6. **Empty search query** (TC-16)
+   ```bash
+   curl -s 'http://localhost:3001/search'
+   ```
+   Expected: Returns "No search query provided" message.
+
+7. **Special characters in search** (TC-17)
+   ```bash
+   curl -s 'http://localhost:3001/search?q=%'
+   ```
+   Expected: Returns results for literal `%` character (if any).
+
+### 4.5 Code Inspection (spec §10.6)
 
 ```bash
 # Verify no string concatenation in queries
 grep -n "VALUES.*'" backend/app/services/auth_service.py || echo 'No concatenation in signup'
 grep -n "WHERE.*'" backend/app/services/auth_service.py || echo 'No concatenation in login'
+grep -n "LIKE.*'" backend/app/api/routes/auth.py || echo 'No concatenation in search'
 
 # Verify parameterized query syntax
 grep -n "VALUES (?, ?, ?)" backend/app/services/auth_service.py
 grep -n "WHERE username = ?" backend/app/services/auth_service.py
+grep -n "LIKE ?" backend/app/api/routes/auth.py
 
 # Verify execute() is called with parameters
 grep -n "execute.*\[" backend/app/services/auth_service.py
+grep -n "execute.*\[" backend/app/api/routes/auth.py
+
+# Verify % wildcards are in parameters, not query (for search)
+grep -n "f\"%.*%\"" backend/app/api/routes/auth.py
 ```
 
 Expected:
-- No string concatenation in query construction.
-- Both parameterized query patterns found.
-- Both `execute()` calls use list syntax `conn.execute(query, [...])`.
+- No string concatenation in query construction in any file.
+- All three parameterized query patterns found.
+- All `execute()` calls use list syntax `conn.execute(query, [...])`.
+- Search query uses `f"%{q}%"` in parameters, not in query template.
 
-### 3.6 Affected-Files Audit (spec §10.7)
+### 4.6 Affected-Files Audit (spec §10.7)
 
 ```bash
 git status --porcelain
 ```
 
-Expected output — exactly one modified file:
+Expected output — exactly two modified files:
 
 ```
  M backend/app/services/auth_service.py
+ M backend/app/api/routes/auth.py
 ```
 
 ---
 
-## Phase 4 — Vulnerability Preservation Audit
+## Phase 5 — Vulnerability Preservation Audit
 
 This phase confirms the **other six** intentional vulnerabilities still fire. It's read-only — no edits.
 
-### 4.1 VULN-2 Stored XSS Still Fires (AC-08, TC-13)
+### 5.1 VULN-2 Stored XSS Still Fires (AC-11, TC-18)
 
 ```bash
 curl -s -i -X POST http://localhost:3001/signup \
@@ -416,15 +570,15 @@ curl -s -b /tmp/x.txt http://localhost:3001/welcome | grep -o "Logged in as.*</s
 
 Expected: the dashboard HTML contains `Logged in as <strong><img src=x onerror=alert(1)></strong>` — raw, unescaped.
 
-### 4.2 VULN-3 Reflected XSS Still Fires (AC-08, TC-14)
+### 5.2 VULN-3 Reflected XSS Still Fires (AC-11, TC-19)
 
 ```bash
 curl -s 'http://localhost:3001/search?q=<script>alert(1)</script>' | grep -o '<script>alert(1)</script>'
 ```
 
-Expected: the literal payload is printed back (reflected unescaped).
+Expected: the literal payload is printed back (reflected unescaped). XSS preserved, only SQLi fixed.
 
-### 4.3 VULN-4 Session Secret Unchanged (AC-08, TC-15)
+### 5.3 VULN-4 Session Secret Unchanged (AC-11, TC-20)
 
 ```bash
 grep -n 'super-secret-key-12345' backend/app/main.py
@@ -432,7 +586,7 @@ grep -n 'super-secret-key-12345' backend/app/main.py
 
 Expected: the secret is still present on its original line.
 
-### 4.4 VULN-6 Exposed DB Still Open (AC-08, TC-16)
+### 5.4 VULN-6 Exposed DB Still Open (AC-11, TC-21)
 
 ```bash
 curl -s -o /tmp/dl.db -w 'status=%{http_code}\n' http://localhost:3001/download/db
@@ -441,7 +595,7 @@ file /tmp/dl.db
 
 Expected: `status=200`, non-zero byte count, `file` identifies it as a SQLite 3.x database.
 
-### 4.5 VULN-7 No Rate Limiting (AC-08, TC-18)
+### 5.5 VULN-7 No Rate Limiting (AC-11, TC-23)
 
 ```bash
 for i in {1..50}; do
@@ -452,7 +606,7 @@ done | sort -u
 
 Expected: only `401` appears in the deduplicated output. No `429`, no connection refusals.
 
-### 4.6 VULN-8 No CSRF Tokens (AC-08, TC-17)
+### 5.6 VULN-8 No CSRF Tokens (AC-11, TC-22)
 
 ```bash
 curl -s http://localhost:3001/login | grep -i csrf || echo '(no csrf field — preserved)'
@@ -461,21 +615,24 @@ curl -s http://localhost:3001/signup | grep -i csrf || echo '(no csrf field — 
 
 Expected: each command prints the `(no csrf field — preserved)` fallback.
 
-### 4.7 Spec Acceptance Criteria Roll-Up
+### 5.7 Spec Acceptance Criteria Roll-Up
 
 Tick every AC from spec §8:
 
-- [ ] AC-01 signup() Uses Parameterized Query (Phase 1, Phase 3.5)
-- [ ] AC-02 login() Uses Parameterized Query (Phase 2, Phase 3.5)
-- [ ] AC-03 No String Concatenation in Queries (Phase 3.5)
-- [ ] AC-04 SQL Injection Payload Fails (Phase 3.3)
-- [ ] AC-05 Normal Signup Still Works (Phase 3.2.1)
-- [ ] AC-06 Normal Login Still Works (Phase 3.2.3)
-- [ ] AC-07 Error Messages Preserved (verified throughout)
-- [ ] AC-08 Other Vulnerabilities Preserved (Phase 4.1–4.6)
-- [ ] AC-09 Affected Files Limited (Phase 3.6)
+- [ ] AC-01 signup() Uses Parameterized Query (Phase 1, Phase 4.5)
+- [ ] AC-02 login() Uses Parameterized Query (Phase 2, Phase 4.5)
+- [ ] AC-03 search_user() Uses Parameterized Query (Phase 3, Phase 4.5)
+- [ ] AC-04 LIKE Pattern Preserved (Phase 3, Phase 4.5)
+- [ ] AC-05 No String Concatenation in Any Query (Phase 4.5)
+- [ ] AC-06 SQL Injection Payload Fails in All Locations (Phase 4.3)
+- [ ] AC-07 Normal Signup Still Works (Phase 4.2.1)
+- [ ] AC-08 Normal Login Still Works (Phase 4.2.3)
+- [ ] AC-09 Normal Search Still Works (Phase 4.2.4)
+- [ ] AC-10 Error Messages Preserved (verified throughout)
+- [ ] AC-11 Other Vulnerabilities Preserved (Phase 5.1–5.6)
+- [ ] AC-12 Affected Files Limited (Phase 4.6)
 
-### 4.8 Stop the Server
+### 5.8 Stop the Server
 
 `Ctrl+C` to stop. Plan complete.
 
@@ -485,13 +642,15 @@ Tick every AC from spec §8:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Forgetting to parameterize one of the two functions | Low | High | Two-phase approach ensures each function is addressed separately; Phase 3.3 verifies both are fixed |
-| Manually escaping values instead of using parameters | Low | High | Phase 1.6 and 2.6 explicitly forbid escaping; Phase 3.5 grep checks confirm no concatenation |
-| Changing error messages or status codes | Low | Medium | Phases 1.5 and 2.5 emphasize unchanged error handling; Phase 3.3 tests verify same responses |
-| Touching other files "for consistency" | Low | Medium | "Files That MUST NOT Be Modified" list; Phase 3.6 git status catches it |
-| Breaking existing bcrypt integration | Low | Medium | Phase 2.5 explicitly forbids touching `verify_password`; Phase 3.2.3 tests login succeeds |
-| Accidentally adding CSRF tokens or rate limiting | Very Low | High | Vulnerability Preservation Checklist carried through each phase; Phase 4 audit catches it |
-| Database schema change perceived as needed | Very Low | Medium | spec §11 explicitly states no migration needed; Phase 3.6 git status catches any new files |
+| Forgetting to parameterize one of the three functions | Low | High | Three-phase approach ensures each function is addressed separately; Phase 4.3 verifies all are fixed |
+| Manually escaping values instead of using parameters | Low | High | Phase 1.6, 2.6, and 3.6 explicitly forbid escaping; Phase 4.5 grep checks confirm no concatenation |
+| Changing error messages or status codes | Low | Medium | Phases 1.5, 2.5, and 3.5 emphasize unchanged error handling; Phase 4.3 tests verify same responses |
+| Touching other files "for consistency" | Low | Medium | "Files That MUST NOT Be Modified" list; Phase 4.6 git status catches it |
+| Breaking existing bcrypt integration | Low | Medium | Phase 2.5 explicitly forbids touching `verify_password`; Phase 4.2.3 tests login succeeds |
+| Accidentally adding CSRF tokens or rate limiting | Very Low | High | Vulnerability Preservation Checklist carried through each phase; Phase 5 audit catches it |
+| Accidentally escaping XSS in search or dashboard | Very Low | High | Phase 3.6 explicitly forbids escaping `q` in HTML; Phase 5.2 verifies XSS still fires |
+| Database schema change perceived as needed | Very Low | Medium | spec §11 explicitly states no migration needed; Phase 4.6 git status catches any new files |
+| Breaking LIKE pattern matching in search | Low | Medium | Phase 3.5 emphasizes preserving LIKE with `%` wildcards in parameters; Phase 4.4 tests verify partial matching works |
 
 ---
 
@@ -501,9 +660,10 @@ If a phase fails verification and cannot be repaired quickly:
 
 ```bash
 git restore backend/app/services/auth_service.py
+git restore backend/app/api/routes/auth.py
 ```
 
-The single authored file snaps back to its pre-fix state. No data migration is involved because no schema changes were made.
+The two authored files snap back to their pre-fix state. No data migration is involved because no schema changes were made.
 
 ---
 
@@ -511,13 +671,13 @@ The single authored file snaps back to its pre-fix state. No data migration is i
 
 To make the negative space explicit:
 
-- **No input validation or sanitization.** Parameterization is the correct fix for SQLi, not manual escaping or validation. Malicious payloads like `' OR '1'='1' --` are still accepted as usernames — they just no longer execute SQL.
+- **No input validation or sanitization.** Parameterization is the correct fix for SQLi, not manual escaping or validation. Malicious payloads like `' OR '1'='1' --` are still accepted as usernames or search terms — they just no longer execute SQL.
 - **No schema changes.** The `users` table structure is unchanged. No `ALTER TABLE`, no new columns.
 - **No database migration script.** Existing rows continue to work without modification.
 - **No new dependencies.** SQLite's parameterized query syntax is built-in; no ORM or query library added.
 - **No session secret rotation.** `"super-secret-key-12345"` remains in `main.py` (VULN-4).
 - **No CSRF tokens.** Forms remain token-less (VULN-8).
-- **No XSS escaping.** Dashboard and search remain unescaped (VULN-2, VULN-3).
-- **No rate limiting middleware.** Login attempts remain unthrottled (VULN-7).
+- **No XSS escaping.** Dashboard `{{username}}` and search `q` remain unescaped (VULN-2, VULN-3).
+- **No rate limiting middleware.** Login and search attempts remain unthrottled (VULN-7).
 - **No /download/db protection.** The endpoint remains open (VULN-6).
 - **No password policy changes.** Any non-empty password is still accepted.
