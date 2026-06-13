@@ -54,7 +54,7 @@ frontend/
 
 `auth_service.login()` no longer matches the password hash inside SQL (bcrypt's per-call salt makes equality matching impossible). It now:
 
-1. Builds `SELECT * FROM users WHERE username = '" + username + "'` — username branch is **still string-concatenated**, preventing SQL injection.
+1. Builds `SELECT * FROM users WHERE username = ?` and passes `username` as a bound parameter — the query is **parameterized**, so VULN-1 is closed.
 2. Calls `verify_password(password, row["password"])` in Python after `fetchone()`.
 3. Returns the same JSON 401 for "no row," "bcrypt mismatch," and "legacy MD5 row" cases — no information leakage between them.
 
@@ -69,7 +69,7 @@ If a legacy MD5 hex digest exists in `vulnerable_app.db`, it cannot authenticate
 
 ## Important Rules
 
-- Always use parameterized queries in `auth_service.py` and `auth.py`. Never concatenate user-controlled input into SQL statements.` MUST stay even though the password match moved to Python.
+- Always use parameterized queries in `auth_service.py` and `auth.py`. Never concatenate user-controlled input into SQL statements (VULN-1 is closed and must stay closed).
 - Never add CSRF tokens to forms (preserves VULN-8)
 - Never change the session secret key (preserves VULN-4)
 - Never add rate limiting middleware (preserves VULN-7)
