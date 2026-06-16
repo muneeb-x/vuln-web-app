@@ -65,8 +65,9 @@ This repository ships in several tagged releases. The three below are the main a
 | **v0.1.0** | Students who want to fix the vulnerabilities **from scratch** | The baseline vulnerable app with **all 8 intentional vulnerabilities open** (including the MD5 weak password storage). Your job is to find and patch each one yourself. |
 | **v0.1.1** | Students who want a **partial reference implementation** | Adds the **dark mode toggle** and replaces MD5 with **bcrypt** (VULN-5 fixed). A good starting point for comparing your own early fixes. |
 | **v1.0.0** | Students who want the **complete reference implementation** | All **8 vulnerabilities fixed** (SQLi, stored & reflected XSS, session hijacking, weak passwords, exposed DB, no rate limiting, CSRF). Study it to see how every patch was implemented. |
+| **v1.0.1** | Students who want the complete reference **plus the first feature enhancement** | Everything in v1.0.0 plus the **password strength meter** on the signup form (real-time bar + live 5-criterion checklist, advisory only — the backend gate is unchanged). |
 
-The incremental tags between them (**v0.1.2 – v0.1.7**) each close one additional vulnerability — see the [Bug Fixes](#bug-fixes) table for the version-by-version mapping.
+The incremental tags between them (**v0.1.2 – v0.1.7**) each close one additional vulnerability — see the [Bug Fixes](#bug-fixes) table for the version-by-version mapping. The **v1.0.1** tag adds the first post-fixes feature enhancement on top of v1.0.0.
 
 ### Download the version you want
 
@@ -210,14 +211,14 @@ The **weak password storage** bug (VULN-5: MD5 → bcrypt) is **fixed** as of **
 
 ## Feature Enhancements
 
-The dark mode toggle is **done** (shipped in v0.1.1). The remaining items are **planned**.
+The dark mode toggle is **done** (shipped in v0.1.1) and the password strength meter is **done** (shipped in v1.0.1). The remaining items are **planned**.
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | 0 | Dark Mode Toggle | Light/dark theme toggle on login, signup, and dashboard pages; preference saved in `localStorage`, restored before first paint to avoid FOUC, with `prefers-color-scheme` fallback. | **Done (v0.1.1)** |
-| 1 | User Profile Page | A page where authenticated users can view and save their personal information and account settings. This also moves the dark-mode preference from per-browser (`localStorage`) to **per-user** — stored on the account so the theme choice follows the user across browsers and devices. | Planned |
-| 2 | Email Verification on Signup | During registration, send a confirmation email containing a verification token/link to confirm the address actually exists; the account is activated only after the user clicks the link. | Planned |
-| 3 | Password Strength Meter | A real-time indicator on the signup form that displays password strength and the acceptance criteria (length, complexity, character classes) as the user types. | Planned |
+| 1 | Password Strength Meter | A real-time, frontend-only indicator on the signup form: a colored bar (Very Weak → Strong), a live checklist of five acceptance criteria (min length 8, lowercase, uppercase, digit, special character), and a `data-theme`-aware color palette. Advisory only — the backend still accepts any non-empty password. | **Done (v1.0.1)** |
+| 2 | User Profile Page | A page where authenticated users can view and save their personal information and account settings. This also moves the dark-mode preference from per-browser (`localStorage`) to **per-user** — stored on the account so the theme choice follows the user across browsers and devices. | Planned |
+| 3 | Email Verification on Signup | During registration, send a confirmation email containing a verification token/link to confirm the address actually exists; the account is activated only after the user clicks the link. | Planned |
 | 4 | Change Password | A dedicated page that lets authenticated users change their password, verifying the current password before setting a new one. | Planned |
 | 5 | Continue with Google (OAuth 2.0) | Allow users to sign up and log in using their Google account via the OAuth 2.0 authorization flow. | Planned |
 | 6 | Continue with GitHub (OAuth 2.0) | Allow users to sign up and log in using their GitHub account via the OAuth 2.0 authorization flow. | Planned |

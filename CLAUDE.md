@@ -124,6 +124,7 @@ Starlette's `add_middleware` prepends to its internal middleware list, so the *l
 - **Signup**: Standard form POST → server redirect
 - **Dashboard**: Server-side `str.replace('{{username}}', ...)` — no template engine; the value is HTML-escaped with `html.escape(..., quote=True)` before substitution (VULN-2 closed)
 - **Theme**: Pure client-side. Each template's `<head>` runs a synchronous IIFE that reads `localStorage["theme"]` (or `prefers-color-scheme` as fallback) and sets `<html data-theme="light|dark">` before first paint. A `#theme-toggle` button in the shared header flips the attribute and persists the new value. No server round-trip, no session field, no backend coupling.
+- **Password strength meter** (shipped in v1.0.1): Pure client-side. An inline `<script>` in `signup.html` listens to `input` on `#password`, scores the password against five criteria (length ≥ 8, lowercase, uppercase, digit, special) in JS, and updates a colored bar + live checklist beneath the password field. Advisory UX only — the backend's signup handler still accepts any non-empty password; nothing about the strength is sent to the server, stored in the session, or written to the database. The bar's colors are CSS custom properties shared between `:root` and `[data-theme="dark"]`, so toggling theme recolors the bar without re-running JS.
 
 ## Important Rules
 
@@ -136,6 +137,7 @@ Starlette's `add_middleware` prepends to its internal middleware list, so the *l
 - Never re-introduce unescaped reflection in `/search`. VULN-3 is closed by HTML-escaping every attacker-controllable sink (`q`, the result-row `username`/`email`, and the exception text) with `html.escape(..., quote=True)` before splicing; the escaping is permanent and must stay (output encoding, not input filtering — the raw values still live in the URL/DB).
 - Never re-add the `/download/db` route. VULN-6 is closed by removing the endpoint entirely; do not reintroduce it (authenticated or otherwise).
 - The dark-mode feature is purely frontend (CSS + 4 files: `styles.css`, `login.html`, `signup.html`, `dashboard.html`). Don't push theme state into the backend, the session, or the database.
+- The password strength meter on the signup form is purely frontend and advisory (CSS + `signup.html` only). Don't push strength state into the backend, the session, or the database, and don't block form submission on a weak password — the bcrypt-hashing server-side gate (VULN-5 closure) is what authenticates; the meter only informs the user.
 
 ## Specification Hierarchy
 
@@ -150,5 +152,6 @@ Starlette's `add_middleware` prepends to its internal middleware list, so the *l
 9. `.claude/specs/reflected-xss-fix.md` + `.claude/specs/reflected-xss-fix-plan.md` — VULN-3 fix
 10. `.claude/specs/no-rate-limiting-fix.md` + `.claude/specs/no-rate-limiting-fix-plan.md` — VULN-7 fix
 11. `.claude/specs/csrf-fix.md` + `.claude/specs/csrf-fix-plan.md` — VULN-8 fix
+12. `.claude/specs/pwd-str-meter.md` + `.claude/specs/pwd-str-meter-plan.md` — Password strength meter (signup, frontend-only, advisory; shipped in v1.0.1)
 
 Prompts that generated each spec/plan/implementation live under `docs/prompts/`.
