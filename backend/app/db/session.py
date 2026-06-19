@@ -42,27 +42,56 @@ def get_db():
 
 
 def init_db():
-    """Create the users table if it does not already exist.
+    """Create -- or upgrade -- the users table.
 
-    Called once from main.py at app startup. Idempotent thanks to
-    `IF NOT EXISTS`, so re-running the app against an existing DB is
-    safe and preserves user rows.
+    Called once from main.py at app startup. Idempotent and row-preserving:
+    a fresh DB gets the full schema below; a pre-existing DB (e.g. from
+    v1.0.2, before Continue-with-Google) is migrated IN PLACE by adding any
+    of the four OAuth columns that are missing. No row is ever dropped.
 
     Schema notes:
     - `username TEXT UNIQUE`: signup relies on this to surface
       "Username already exists" via sqlite3.IntegrityError.
-    - `password TEXT`: stores the bcrypt hash string (not the plaintext
-      password and not a binary blob -- bcrypt.hashpw() returns bytes
-      that we decode to UTF-8 in core/security.py).
+    - `password TEXT` (NULLABLE): local accounts store the bcrypt hash
+      string; Google (OAuth-only) accounts store NULL -- there is no weak
+      hash to leak, and the unchanged password login() fails closed on a
+      NULL hash, so such accounts simply cannot log in with a password.
+    - `google_id TEXT UNIQUE`: the user's stable Google subject id, or NULL
+      for local accounts. SQLite allows multiple NULLs under UNIQUE, so
+      local users coexist freely.
+    - `name` / `picture`: the Google profile display name and avatar URL
+      (stored, not rendered in this release).
+    - `auth_provider TEXT DEFAULT 'local'`: 'local' or 'google'.
     """
     conn = get_db()
     conn.execute(
         """CREATE TABLE IF NOT EXISTS users (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            email    TEXT,
-            password TEXT
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT UNIQUE,
+            email         TEXT,
+            password      TEXT,
+            google_id     TEXT UNIQUE,
+            name          TEXT,
+            picture       TEXT,
+            auth_provider TEXT DEFAULT 'local'
         )"""
     )
+
+    # Migrate older databases in place: add any missing OAuth columns. Note
+    # that ALTER TABLE ADD COLUMN cannot carry a UNIQUE constraint in SQLite,
+    # so a migrated `google_id` lacks the table-level UNIQUE; uniqueness is
+    # still enforced in practice because the service always SELECTs by
+    # google_id before inserting. Fresh DBs get UNIQUE from CREATE TABLE above.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    migrations = {
+        "google_id": "ALTER TABLE users ADD COLUMN google_id TEXT",
+        "name": "ALTER TABLE users ADD COLUMN name TEXT",
+        "picture": "ALTER TABLE users ADD COLUMN picture TEXT",
+        "auth_provider": "ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local'",
+    }
+    for column, ddl in migrations.items():
+        if column not in existing:
+            conn.execute(ddl)
+
     conn.commit()
     conn.close()

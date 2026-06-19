@@ -867,3 +867,94 @@ a:hover {
     border: 1px solid var(--color-success-border);
     color: var(--color-success-text);
 }
+
+/* ============================================================
+ * CONTINUE WITH GOOGLE (OAuth) — v1.0.3
+ * The "or" divider, the Google button (a styled <a>), and the
+ * static "not configured" notice page. All theme-aware via the
+ * existing custom properties; no new palette is introduced.
+ * ============================================================ */
+
+/* "or" divider between the form and the Google button */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 20px 0;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    border-bottom: 1px solid var(--color-border-soft);
+}
+
+.auth-divider span {
+    padding: 0 12px;
+}
+
+/* Google button — reuses .btn (radius, weight, transition); overrides
+   display to flex so the icon + label center together. */
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-input);
+}
+
+.btn-google:hover {
+    background: var(--color-bg-input);
+}
+
+.btn-google-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+/* Static "Google login not configured" notice page */
+.notice-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 48px 20px;
+}
+
+.notice-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-soft);
+    border-radius: 12px;
+    padding: 32px;
+    max-width: 560px;
+    width: 100%;
+    text-align: center;
+}
+
+.notice-text {
+    color: var(--color-text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 12px 0;
+    text-align: left;
+}
+
+.notice-card code {
+    background: var(--color-bg-input);
+    border: 1px solid var(--color-border-soft);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+    color: var(--color-text-accent);
+}
+
+.notice-card .btn-primary {
+    margin-top: 8px;
+}

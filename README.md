@@ -58,7 +58,7 @@ vuln-web-app/
 
 ## Releases & Versions
 
-This repository ships in several tagged releases. The three below are the main anchors — pick the one that matches how you want to learn:
+This repository ships in several tagged releases. The versions below are the main anchors — pick the one that matches how you want to learn:
 
 | Version | Who it's for | What you get |
 |---------|--------------|--------------|
@@ -66,8 +66,10 @@ This repository ships in several tagged releases. The three below are the main a
 | **v0.1.1** | Students who want a **partial reference implementation** | Adds the **dark mode toggle** and replaces MD5 with **bcrypt** (VULN-5 fixed). A good starting point for comparing your own early fixes. |
 | **v1.0.0** | Students who want the **complete reference implementation** | All **8 vulnerabilities fixed** (SQLi, stored & reflected XSS, session hijacking, weak passwords, exposed DB, no rate limiting, CSRF). Study it to see how every patch was implemented. |
 | **v1.0.1** | Students who want the complete reference **plus the first feature enhancement** | Everything in v1.0.0 plus the **password strength meter** on the signup form (real-time bar + live 5-criterion checklist, advisory only — the backend gate is unchanged). |
+| **v1.0.2** | Students who want the reference **plus the user profile page** | Everything in v1.0.1 plus the authenticated **User Profile Page** (`/profile`): view your username/email and change your password (current-password check + bcrypt, with a server-enforced strength policy). CSRF-protected, rate-limited, no schema change. |
+| **v1.0.3** | Students who want the reference **plus social login** | Everything in v1.0.2 plus **Continue with Google** (OAuth 2.0 Authorization Code flow via Authlib + OpenID Connect): new accounts are auto-created and matching emails linked, and login reuses the existing signed session. The project's **first database-schema change**; the app still runs (and the button shows a setup page) when Google isn't configured. |
 
-The incremental tags between them (**v0.1.2 – v0.1.7**) each close one additional vulnerability — see the [Bug Fixes](#bug-fixes) table for the version-by-version mapping. The **v1.0.1** tag adds the first post-fixes feature enhancement on top of v1.0.0.
+The incremental tags between them (**v0.1.2 – v0.1.7**) each close one additional vulnerability — see the [Bug Fixes](#bug-fixes) table for the version-by-version mapping. The feature-enhancement tags build on top of v1.0.0: **v1.0.1** adds the password strength meter, **v1.0.2** the User Profile Page, and **v1.0.3** Continue with Google.
 
 ### Download the version you want
 
@@ -129,6 +131,38 @@ The app starts at **http://localhost:3001**. The database file (`vulnerable_app.
 
 ---
 
+## Continue with Google — Setup (optional)
+
+The app runs fine **without** any Google setup: username/password login works as
+always, and the "Continue with Google" button simply shows a friendly
+"not configured" page. To actually enable Google sign-in, give the app a Google
+OAuth client:
+
+1. **Create a project** — open the [Google Cloud Console](https://console.cloud.google.com/), create a new project, then **select/open it** (it must be the active project).
+2. **Configure the consent screen** — in **Google Auth Platform** (older UI: *APIs & Services → OAuth consent screen*), work through the horizontal steps **App information → Audience → Contact → Finish**. Google blocks client creation until this is done.
+3. **Make it usable** — either **Publish app** (Audience page → *In production*) so any Google account can sign in, or keep it in *Testing* and add your Google email under **Audience → Test users**. (Only basic `openid`/`email`/`profile` scopes are used, so no Google verification is required.)
+4. **Create the OAuth client** — **Clients → Create client → Web application**. Under **Authorized redirect URIs** add this **exact** value (scheme, host, port, path — no trailing slash):
+   ```
+   http://localhost:3001/auth/google/callback
+   ```
+5. **Add the credentials locally** — copy the template and fill in your values:
+   ```bash
+   cp .env.example .env
+   # then edit .env:
+   #   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   #   GOOGLE_CLIENT_SECRET=...
+   ```
+6. **Restart** — `uv run backend/app/main.py`. The Google button now works.
+
+> 🔒 `.env` is **git-ignored** — never commit your real secret. The committed
+> `.env.example` only holds placeholders.
+>
+> 📖 A plain-English walkthrough of the whole flow (what OAuth/cookies are, how
+> the callback works, the exact console clicks) lives in
+> [`docs/continue-with-google-explained.md`](docs/continue-with-google-explained.md).
+
+---
+
 ## API Endpoints
 
 | Method | Endpoint | Description | Auth Required |
@@ -141,6 +175,8 @@ The app starts at **http://localhost:3001**. The database file (`vulnerable_app.
 | GET | `/welcome` | Protected dashboard | Yes |
 | GET | `/profile` | Authenticated profile page (view info + change password form) | Yes |
 | POST | `/profile/password` | Change the logged-in user's password (returns JSON) | Yes |
+| GET | `/auth/google/login` | Start Google OAuth (or show the setup page when unconfigured) | No |
+| GET | `/auth/google/callback` | Google OAuth redirect URI: verify, create/link the user, log in via session | No |
 | GET | `/logout` | Terminate session | No |
 | GET | `/search?q=` | Search users | No |
 
@@ -213,7 +249,7 @@ The **weak password storage** bug (VULN-5: MD5 → bcrypt) is **fixed** as of **
 
 ## Feature Enhancements
 
-The dark mode toggle is **done** (shipped in v0.1.1) and the password strength meter is **done** (shipped in v1.0.1). The remaining items are **planned**.
+The dark mode toggle (v0.1.1), password strength meter (v1.0.1), User Profile Page (v1.0.2), and Continue with Google (v1.0.3) are **done** — see the Status column. The remaining items are **planned**.
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
@@ -221,14 +257,12 @@ The dark mode toggle is **done** (shipped in v0.1.1) and the password strength m
 | 1 | Password Strength Meter | A real-time, frontend-only indicator on the signup form: a colored bar (Very Weak → Strong), a live checklist of five acceptance criteria (min length 8, lowercase, uppercase, digit, special character), and a `data-theme`-aware color palette. Advisory only — the backend still accepts any non-empty password. | **Done (v1.0.1)** |
 | 2 | User Profile Page | Authenticated `/profile` page: view your username and email (read-only) and change your password (current-password check + bcrypt). The new password must meet the same five-criteria strength policy as signup (length ≥ 8 plus lower/upper/digit/special), enforced client- and server-side (no meter widget shown). CSRF-protected, rate-limited, no schema change. Dark-mode stays per-browser (`localStorage`). | **Done (v1.0.2)** |
 | 3 | Email Verification on Signup | During registration, send a confirmation email containing a verification token/link to confirm the address actually exists; the account is activated only after the user clicks the link. | Planned |
-| 4 | Change Password | A dedicated page that lets authenticated users change their password, verifying the current password before setting a new one. | Planned |
-| 5 | Continue with Google (OAuth 2.0) | Allow users to sign up and log in using their Google account via the OAuth 2.0 authorization flow. | Planned |
-| 6 | Continue with GitHub (OAuth 2.0) | Allow users to sign up and log in using their GitHub account via the OAuth 2.0 authorization flow. | Planned |
-| 7 | MFA via Authenticator App (TOTP) | Add two-factor authentication using a TOTP authenticator app (e.g., Google Authenticator or Authy) with QR-code enrollment. | Planned |
-| 8 | OTP via Email | Send a one-time passcode to the user's registered email as a second authentication factor during login. | Planned |
-| 9 | QR Code Login | Let users log in by scanning a QR code shown on the login page from an already-authenticated mobile device. | Planned |
-| 10 | CAPTCHA on Login | Add a CAPTCHA (e.g., Google reCAPTCHA or hCaptcha) to the login form to block automated and bot-driven login attempts. | Planned |
-| 11 | Account Lockout | Temporarily lock an account after a configured number of consecutive failed login attempts, with a cooldown timer before retry. | Planned |
+| 4 | Continue with Google (OAuth 2.0) | Sign up / log in with a Google account via the OAuth 2.0 Authorization Code flow (Authlib + OpenID Connect). New users are auto-created and existing emails are linked; login uses the **existing signed session** (no JWT, one cookie). The OAuth `state` param is the flow's CSRF defense. Credentials come from a git-ignored `.env`; with none set, the button shows a friendly setup page and the rest of the app still runs. First DB-schema change (4 nullable columns on `users`). | **Done (v1.0.3)** |
+| 5 | MFA via Authenticator App (TOTP) | Add two-factor authentication using a TOTP authenticator app (e.g., Google Authenticator or Authy) with QR-code enrollment. | Planned |
+| 6 | OTP via Email | Send a one-time passcode to the user's registered email as a second authentication factor during login. | Planned |
+| 7 | QR Code Login | Let users log in by scanning a QR code shown on the login page from an already-authenticated mobile device. | Planned |
+| 8 | CAPTCHA on Login | Add a CAPTCHA (e.g., Google reCAPTCHA or hCaptcha) to the login form to block automated and bot-driven login attempts. | Planned |
+| 9 | Account Lockout | Temporarily lock an account after a configured number of consecutive failed login attempts, with a cooldown timer before retry. | Planned |
 
 ---
 

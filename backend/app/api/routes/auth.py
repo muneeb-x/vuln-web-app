@@ -29,13 +29,19 @@ Closed vulnerabilities relevant to this file:
 
 import os
 import html
+import logging
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.csrf import get_or_create_csrf_token
+from app.core import config
+from app.core.oauth import oauth
 from app.services import auth_service
+from app.services import oauth_service
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -254,6 +260,77 @@ async def profile_password_post(
     ignores the extra csrf_token field.
     """
     return auth_service.change_password(request, current_password, new_password)
+
+
+@router.get("/auth/google/login")
+async def google_login(request: Request):
+    """Start the Google OAuth 2.0 Authorization Code flow.
+
+    Worker endpoint (no page of its own): when Google is configured it 302-
+    redirects the browser to Google's consent screen; Authlib stashes the
+    anti-CSRF `state` and anti-replay `nonce` in the session on the way out.
+
+    If Google is NOT configured, we render a friendly setup page (HTTP 200)
+    instead of crashing or redirecting nowhere -- a fresh clone stays usable
+    and the password flow is unaffected.
+    """
+    if not config.is_google_configured():
+        with open(os.path.join(TEMPLATE_DIR, "oauth_not_configured.html"), "r") as f:
+            return HTMLResponse(content=f.read())
+    return await oauth.google.authorize_redirect(request, config.GOOGLE_REDIRECT_URI)
+
+
+@router.get("/auth/google/callback")
+async def google_callback(request: Request):
+    """Handle Google's redirect back to the app (the registered redirect URI).
+
+    Worker endpoint (no page of its own): it verifies the response, logs the
+    user in via the SAME signed session cookie the password flow uses, and
+    302s to /welcome. There is no JWT and no extra cookie -- the session is
+    the single auth mechanism.
+
+    Every failure mode degrades to /login WITHOUT leaking any detail to the
+    client (the specifics are logged server-side):
+      - user denied consent / provider error (`?error=...`)
+      - invalid token / state mismatch / expired session (Authlib raises)
+      - missing user information (no email/sub from Google)
+    """
+    # 1) User denied consent, or Google reported an error on the redirect.
+    error = request.query_params.get("error")
+    if error:
+        logger.warning("Google OAuth callback returned error=%s", error)
+        return RedirectResponse(url="/login", status_code=302)
+
+    # 2) Exchange the code + verify the ID token. authorize_access_token()
+    #    validates `state` (anti-CSRF), swaps the code for tokens, and verifies
+    #    the ID token signature + iss/aud/exp/nonce. It raises on any mismatch
+    #    or when the session (holding `state`/`nonce`) has expired.
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception:
+        logger.warning("Google OAuth token exchange/verification failed", exc_info=True)
+        return RedirectResponse(url="/login", status_code=302)
+
+    # 3) Pull the verified profile claims.
+    userinfo = token.get("userinfo") or {}
+    google_id = userinfo.get("sub")
+    email = userinfo.get("email")
+    name = userinfo.get("name", "")
+    picture = userinfo.get("picture", "")
+
+    # 4) Resolve to a user row (create / link / return). None => missing info.
+    user = oauth_service.find_or_create_google_user(google_id, email, name, picture)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    # 5) Log in by writing the SAME session keys as auth_service.login(). This
+    #    mutation is what makes SessionMiddleware emit the signed Set-Cookie.
+    #    Existing keys (e.g. csrf_token) are preserved -- we merge, not replace.
+    request.session["user_id"] = user["id"]
+    request.session["username"] = user["username"]
+    request.session["email"] = user["email"]
+
+    return RedirectResponse(url="/welcome", status_code=302)
 
 
 @router.get("/logout")
