@@ -24,6 +24,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from app.db.session import get_db
 from app.core.security import hash_password, verify_password
 from app.services import verification_service
+from app.services import lockout_service
 
 
 def password_meets_policy(password: str) -> bool:
@@ -137,6 +138,11 @@ def login(request: Request, username: str, password: str):
       SessionMiddleware on the way out because we mutate request.session.
     - JSONResponse(401, {"error": "..."}) on bad credentials, missing
       fields, or DB errors.
+    - JSONResponse(401, {"error": "...", "locked": True, "retry_after": <int>})
+      when the account is temporarily locked after too many consecutive failed
+      attempts (Account-Lockout feature, v1.0.5). Checked BEFORE bcrypt, so a
+      locked account is refused even with the correct password and no session
+      is written.
 
     The HTML login page uses fetch() instead of a normal form submit so it
     can read the JSON response and redirect (or display the error inline)
@@ -177,9 +183,36 @@ def login(request: Request, username: str, password: str):
     finally:
         conn.close()
 
+    # Account-lockout gate (v1.0.5): if the account is currently locked, refuse
+    # immediately -- BEFORE bcrypt -- even if the password is correct. Only an
+    # existing account can be locked; a missing row falls through to the generic
+    # 401 below (lockout protects real accounts only). Checking before
+    # verify_password() means a locked account never burns a bcrypt hash and
+    # cannot be used as a bcrypt-CPU oracle. This per-account control layers on
+    # top of the unchanged per-IP rate limiter (VULN-7); it does not replace it.
+    #
+    # Trade-off (deliberate): the lock message reveals that this username exists,
+    # a bounded relaxation of the otherwise-strict enumeration resistance --
+    # every OTHER failure still returns the identical generic 401 below.
+    if user:
+        remaining = lockout_service.seconds_remaining(user)
+        if remaining > 0:
+            return JSONResponse(
+                content={
+                    "error": lockout_service.lock_message(remaining),
+                    "locked": True,
+                    "retry_after": remaining,
+                },
+                status_code=401,
+            )
+
     # verify_password() returns False rather than raising on a malformed
     # hash, so legacy MD5 rows fail closed here -- they cannot log in.
     if user and verify_password(password, user["password"]):
+        # Correct password: clear any accumulated failure count / stale lock
+        # BEFORE the verification gate, so a correct-but-unverified login also
+        # resets the chain (it is not a brute-force attempt).
+        lockout_service.reset(user["id"])
         # Email-Verification gate (v1.0.4): a correct password is NOT enough --
         # the account must be verified before a session is created. Google
         # accounts and grandfathered legacy accounts are is_verified=1, so they
@@ -207,8 +240,24 @@ def login(request: Request, username: str, password: str):
         request.session["email"] = user["email"]
         return JSONResponse(content={"success": True, "redirect": "/welcome"})
     else:
-        # Same JSON body for "no such user" and "wrong password". See the
-        # docstring's note on enumeration resistance.
+        # Wrong password. For an EXISTING account, count this toward the lockout
+        # threshold (v1.0.5); a non-existent username has no row to touch. If
+        # this miss trips the lock, surface the locked 401 with a countdown.
+        if user:
+            remaining = lockout_service.register_failure(
+                user["id"], user["failed_login_attempts"]
+            )
+            if remaining > 0:
+                return JSONResponse(
+                    content={
+                        "error": lockout_service.lock_message(remaining),
+                        "locked": True,
+                        "retry_after": remaining,
+                    },
+                    status_code=401,
+                )
+        # Same JSON body for "no such user" and "wrong-but-not-yet-locked
+        # password". See the docstring's note on enumeration resistance.
         return JSONResponse(
             content={"error": "Invalid username or password"},
             status_code=401,

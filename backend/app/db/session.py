@@ -69,6 +69,12 @@ def init_db():
       (`secrets.token_urlsafe(32)`), or NULL when none is outstanding.
     - `verification_token_expires REAL`: Unix epoch seconds after which the
       token is dead, or NULL. Compared against `time.time()` on /verify.
+    - `failed_login_attempts INTEGER DEFAULT 0`: consecutive failed credential
+      checks since the last success / lock (Account-Lockout feature, v1.0.5).
+      Reset to 0 on any correct password.
+    - `locked_until REAL`: Unix epoch seconds until which the account is locked
+      out after too many consecutive failures, or NULL when not locked.
+      Compared against `time.time()` on every login / resend.
     """
     conn = get_db()
     conn.execute(
@@ -83,7 +89,9 @@ def init_db():
             auth_provider              TEXT DEFAULT 'local',
             is_verified                INTEGER DEFAULT 0,
             verification_token         TEXT,
-            verification_token_expires REAL
+            verification_token_expires REAL,
+            failed_login_attempts      INTEGER DEFAULT 0,
+            locked_until               REAL
         )"""
     )
 
@@ -102,6 +110,11 @@ def init_db():
         "is_verified": "ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0",
         "verification_token": "ALTER TABLE users ADD COLUMN verification_token TEXT",
         "verification_token_expires": "ALTER TABLE users ADD COLUMN verification_token_expires REAL",
+        # Account-Lockout feature (v1.0.5): two columns. The defaults (0 / NULL)
+        # already mean "no failures, not locked", so -- unlike is_verified --
+        # NO grandfather UPDATE is needed; existing rows are correct as-is.
+        "failed_login_attempts": "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0",
+        "locked_until": "ALTER TABLE users ADD COLUMN locked_until REAL",
     }
     for column, ddl in migrations.items():
         if column not in existing:

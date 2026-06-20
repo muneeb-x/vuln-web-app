@@ -69,8 +69,9 @@ This repository ships in several tagged releases. The versions below are the mai
 | **v1.0.2** | Students who want the reference **plus the user profile page** | Everything in v1.0.1 plus the authenticated **User Profile Page** (`/profile`): view your username/email and change your password (current-password check + bcrypt, with a server-enforced strength policy). CSRF-protected, rate-limited, no schema change. |
 | **v1.0.3** | Students who want the reference **plus social login** | Everything in v1.0.2 plus **Continue with Google** (OAuth 2.0 Authorization Code flow via Authlib + OpenID Connect): new accounts are auto-created and matching emails linked, and login reuses the existing signed session. The project's **first database-schema change**; the app still runs (and the button shows a setup page) when Google isn't configured. |
 | **v1.0.4** | Students who want the reference **plus email verification** | Everything in v1.0.3 plus **Email Verification on Signup**: registration sends a single-use, 1-hour confirmation link over SMTP (stdlib only, no new dependency); accounts are created *unverified* and **cannot log in until the link is clicked**, with a credential-checked **Resend** button on the login page. Google accounts are auto-verified; the signup page shows a friendly setup page when SMTP isn't configured. Second DB-schema change (3 columns on `users`). |
+| **v1.0.5** | Students who want the reference **plus account lockout** | Everything in v1.0.4 plus **Account Lockout**: after a configurable number of consecutive failed logins (default **6**) a single account is temporarily locked (default **1 hour**, then auto-unlocks), refusing authentication even with the correct password and showing a countdown. The lock is checked *before* bcrypt and shared between login and the verification-resend endpoint. A per-**account** layer that **complements — does not replace — the per-IP rate limiter (VULN-7)**. Third DB-schema change (2 columns on `users`); stdlib only, no new dependency. |
 
-The incremental tags between them (**v0.1.2 – v0.1.7**) each close one additional vulnerability — see the [Bug Fixes](#bug-fixes) table for the version-by-version mapping. The feature-enhancement tags build on top of v1.0.0: **v1.0.1** adds the password strength meter, **v1.0.2** the User Profile Page, **v1.0.3** Continue with Google, and **v1.0.4** Email Verification on Signup.
+The incremental tags between them (**v0.1.2 – v0.1.7**) each close one additional vulnerability — see the [Bug Fixes](#bug-fixes) table for the version-by-version mapping. The feature-enhancement tags build on top of v1.0.0: **v1.0.1** adds the password strength meter, **v1.0.2** the User Profile Page, **v1.0.3** Continue with Google, **v1.0.4** Email Verification on Signup, and **v1.0.5** Account Lockout.
 
 ### Download the version you want
 
@@ -227,7 +228,7 @@ build the link. The real `.env` is **git-ignored** — never commit your secret;
 | 4 | Session Hijacking | A07:2021 - Auth Failures | `main.py` — was a hardcoded secret key; now sourced from `SECRET_KEY` env var with a strong random fallback | **Closed** |
 | 5 | Weak Password Storage | A02:2021 - Crypto Failures | `security.py` — was MD5 (no salt); now bcrypt (cost 12) | **Closed** |
 | 6 | Exposed Database | A01:2021 - Access Control | `auth.py` — unauthenticated `/download/db` (route removed) | **Closed** |
-| 7 | No Rate Limiting | A07:2021 - Auth Failures | `core/rate_limit.py` + `main.py` — was no throttling; now per-IP sliding-window limit on every POST (HTTP 429 when exceeded) | **Closed** |
+| 7 | No Rate Limiting | A07:2021 - Auth Failures | `core/rate_limit.py` + `main.py` — was no throttling; now per-IP sliding-window limit on every POST (HTTP 429 when exceeded). The v1.0.5 Account Lockout adds a complementary per-**account** layer on top; this middleware is unchanged. | **Closed** |
 | 8 | CSRF | A01:2021 - Access Control | `core/csrf.py` + `main.py` + form templates — was no CSRF tokens on forms; now per-session synchronizer token validated on every POST (HTTP 403 when missing or mismatched) | **Closed** |
 
 ---
@@ -284,7 +285,7 @@ The **weak password storage** bug (VULN-5: MD5 → bcrypt) is **fixed** as of **
 
 ## Feature Enhancements
 
-The dark mode toggle (v0.1.1), password strength meter (v1.0.1), User Profile Page (v1.0.2), Continue with Google (v1.0.3), and Email Verification on Signup (v1.0.4) are **done** — see the Status column. The remaining items are **planned**.
+The dark mode toggle (v0.1.1), password strength meter (v1.0.1), User Profile Page (v1.0.2), Continue with Google (v1.0.3), Email Verification on Signup (v1.0.4), and Account Lockout (v1.0.5) are **done** — see the Status column. The remaining items are **planned**.
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
@@ -297,7 +298,7 @@ The dark mode toggle (v0.1.1), password strength meter (v1.0.1), User Profile Pa
 | 6 | OTP via Email | Send a one-time passcode to the user's registered email as a second authentication factor during login. | Planned |
 | 7 | QR Code Login | Let users log in by scanning a QR code shown on the login page from an already-authenticated mobile device. | Planned |
 | 8 | CAPTCHA on Login | Add a CAPTCHA (e.g., Google reCAPTCHA or hCaptcha) to the login form to block automated and bot-driven login attempts. | Planned |
-| 9 | Account Lockout | Temporarily lock an account after a configured number of consecutive failed login attempts, with a cooldown timer before retry. | Planned |
+| 9 | Account Lockout | Temporarily lock an account after a configured number of consecutive failed login attempts (default 6), with a cooldown timer before retry (default 1 hour, then auto-unlocks). Per-account state on two new `users` columns; the lock is checked **before** bcrypt and shared between `POST /login` and `POST /verify/resend`, so an attacker can't reset the count by switching endpoints. The lock message shows a countdown (a deliberate, bounded relaxation of login enumeration resistance). A per-account layer that **complements — not replaces — the per-IP rate limiter (VULN-7)**, which stays unchanged. Thresholds are env-tunable; stdlib only, no new dependency. Third DB-schema change (2 columns). | **Done (v1.0.5)** |
 
 ---
 

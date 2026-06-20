@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 from app.db.session import get_db
 from app.core import config, mailer
 from app.core.security import verify_password
+from app.services import lockout_service
 
 logger = logging.getLogger(__name__)
 
@@ -172,20 +173,56 @@ def resend_for_credentials(username: str, password: str) -> JSONResponse:
     conn = get_db()
     try:
         # FIXED: SQL Injection closed -- parameterized SELECT by username.
+        # Also fetch the lockout columns so this credential-checking endpoint
+        # shares the SAME per-account counter as login (v1.0.5) -- an attacker
+        # must not get a fresh allowance by pivoting from /login to here.
         row = conn.execute(
-            "SELECT id, username, email, password, is_verified FROM users "
-            "WHERE username = ?",
+            "SELECT id, username, email, password, is_verified, "
+            "failed_login_attempts, locked_until FROM users WHERE username = ?",
             [username],
         ).fetchone()
     finally:
         conn.close()
 
+    # Account-lockout gate (v1.0.5): mirror login -- if the account is locked,
+    # refuse BEFORE bcrypt, so resend cannot be used as a brute-force oracle to
+    # bypass the lock. Only an existing row can be locked.
+    if row:
+        remaining = lockout_service.seconds_remaining(row)
+        if remaining > 0:
+            return JSONResponse(
+                content={
+                    "error": lockout_service.lock_message(remaining),
+                    "locked": True,
+                    "retry_after": remaining,
+                },
+                status_code=401,
+            )
+
     # Same generic 401 for "no such user" and "wrong password" (enumeration
     # resistance, matching auth_service.login). verify_password fails closed.
     if not row or not verify_password(password, row["password"]):
+        # Wrong password for an existing account counts toward the shared
+        # lockout threshold; lock (and surface the countdown) if this trips it.
+        if row:
+            remaining = lockout_service.register_failure(
+                row["id"], row["failed_login_attempts"]
+            )
+            if remaining > 0:
+                return JSONResponse(
+                    content={
+                        "error": lockout_service.lock_message(remaining),
+                        "locked": True,
+                        "retry_after": remaining,
+                    },
+                    status_code=401,
+                )
         return JSONResponse(
             content={"error": "Invalid username or password"}, status_code=401
         )
+
+    # Correct password: clear any accumulated failure count / stale lock.
+    lockout_service.reset(row["id"])
 
     if row["is_verified"]:
         # Already verified -- a no-op success, never re-issuing/un-verifying.

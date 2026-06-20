@@ -1,5 +1,5 @@
-"""Configuration + .env loading for the Continue-with-Google and Email
-Verification features.
+"""Configuration + .env loading for the Continue-with-Google, Email
+Verification, and Account-Lockout features.
 
 Stdlib only -- no python-dotenv dependency. This module:
 
@@ -9,6 +9,8 @@ Stdlib only -- no python-dotenv dependency. This module:
 2. Exposes the Google OAuth settings and an ``is_google_configured()`` gate.
 3. Exposes the SMTP / email-verification settings and an
    ``is_email_configured()`` gate.
+4. Exposes the account-lockout thresholds (env-tunable, non-secret; no gate --
+   the feature is always on with safe defaults).
 
 Design notes (production posture):
 - **Real environment variables always win** over ``.env`` values. A container,
@@ -114,3 +116,17 @@ def is_email_configured() -> bool:
     is_google_configured() above.
     """
     return bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
+
+
+# --- Account-lockout settings (env-tunable, non-secret) ----------------------
+# After ACCOUNT_LOCKOUT_MAX_ATTEMPTS consecutive failed credential checks against
+# a single account, it is locked for ACCOUNT_LOCKOUT_DURATION_SECONDS. These are
+# NOT secrets -- there is no is_*_configured() gate; the feature is always on
+# with safe defaults and can be lowered for demos, e.g.
+#   ACCOUNT_LOCKOUT_MAX_ATTEMPTS=3 ACCOUNT_LOCKOUT_DURATION_SECONDS=30
+# This per-ACCOUNT control complements (does not replace) the per-IP
+# RateLimitMiddleware (VULN-7), which stays registered and unchanged.
+ACCOUNT_LOCKOUT_MAX_ATTEMPTS = int(os.environ.get("ACCOUNT_LOCKOUT_MAX_ATTEMPTS", "6"))
+ACCOUNT_LOCKOUT_DURATION_SECONDS = int(
+    os.environ.get("ACCOUNT_LOCKOUT_DURATION_SECONDS", "3600")
+)
