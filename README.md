@@ -168,35 +168,45 @@ As of **v1.0.4**, creating a username/password account sends a confirmation
 email, and the account **cannot log in until the link is clicked** (the login
 page then offers a credential-checked "Resend verification email" button).
 Because sign-up depends on email, the signup page shows a friendly **"sign-up
-isn't available yet"** page until you configure an SMTP server. (Login for
-already-verified accounts and **Continue with Google** still work without SMTP;
+isn't available yet"** page until email is configured. (Login for
+already-verified accounts and **Continue with Google** still work without email;
 Google accounts are auto-verified.)
 
-The app uses Python's standard-library SMTP client — **no extra dependency**.
-The easiest provider is Gmail with an App Password:
+Email is delivered through the **SendGrid HTTPS API** (stdlib `urllib` — **no
+extra dependency**). SendGrid is used instead of SMTP because many hosts (e.g.
+Render's free plan) **block outbound SMTP ports**, whereas SendGrid's API works
+over HTTPS (port 443). You need a SendGrid API key and a verified sender:
 
-1. **Enable 2-Step Verification** on the Google account (required before app
-   passwords exist): https://myaccount.google.com/security
-2. **Create an App Password** — https://myaccount.google.com/apppasswords —
-   name it e.g. `vuln-web-app`. Google shows a **16-character** password once.
-3. **Add the credentials locally** — copy the template and fill in your values:
+1. **Create a SendGrid account** (free tier is enough) at https://sendgrid.com.
+2. **Verify a sender** — *Settings → Sender Authentication* → either verify a
+   **Single Sender** email address or authenticate a domain. This address is
+   what `SENDGRID_FROM` must be set to.
+3. **Create an API key** — *Settings → API Keys → Create API Key* with the
+   **Mail Send** permission. SendGrid shows the key (starting `SG.`) **once** —
+   copy it.
+4. **Add the credentials** — either locally in `.env`, or as environment
+   variables on your host (e.g. Render):
    ```bash
    cp .env.example .env
    # then edit .env:
-   #   SMTP_HOST=smtp.gmail.com
-   #   SMTP_PORT=587
-   #   SMTP_USER=your-address@gmail.com
-   #   SMTP_PASSWORD=your-16-char-app-password
-   #   SMTP_FROM=your-address@gmail.com
-   #   APP_BASE_URL=http://localhost:3001
+   #   SENDGRID_API_KEY=SG.your-sendgrid-api-key
+   #   SENDGRID_FROM=your-verified-sender@example.com
+   #   APP_BASE_URL=http://localhost:3001     # your public origin in production
    ```
-4. **Restart** — `uv run backend/app/main.py`. Sign-up now sends verification
+5. **Restart** — `uv run backend/app/main.py`. Sign-up now sends verification
    emails, and the link in the email (valid 1 hour) confirms the account.
+
+> **Deploying (e.g. Render):** the real `.env` is git-ignored and **not**
+> deployed — set `SENDGRID_API_KEY`, `SENDGRID_FROM`, and `APP_BASE_URL` as
+> environment variables in your host's dashboard, and set `APP_BASE_URL` to your
+> public `https://` origin (no port). Without these the signup page shows the
+> "not configured" notice.
 
 The verification token is a single-use, 1-hour `secrets.token_urlsafe(32)`
 value stored on the user's row; `APP_BASE_URL` is the public origin used to
-build the link. The real `.env` is **git-ignored** — never commit your secret;
-`.env.example` holds placeholders only.
+build the link. `SENDGRID_FROM` must be an address (or domain) **verified in
+SendGrid**, or the send is rejected. The real `.env` is **git-ignored** — never
+commit your API key; `.env.example` holds placeholders only.
 
 ---
 
