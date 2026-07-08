@@ -124,6 +124,7 @@ Starlette's `add_middleware` prepends to its internal middleware list, so the *l
 - **Signup**: Standard form POST → server redirect
 - **Dashboard**: Server-side `str.replace('{{username}}', ...)` — no template engine; the value is HTML-escaped with `html.escape(..., quote=True)` before substitution (VULN-2 closed)
 - **Theme**: Pure client-side. Each template's `<head>` runs a synchronous IIFE that reads `localStorage["theme"]` (or `prefers-color-scheme` as fallback) and sets `<html data-theme="light|dark">` before first paint. A `#theme-toggle` button in the shared header flips the attribute and persists the new value. No server round-trip, no session field, no backend coupling.
+- **Profile / Change Password**: `GET /profile` (session-gated, like `/welcome`) renders `profile.html` with the CSRF token and HTML-escaped `{{username}}`/`{{email}}` spliced in. `POST /profile/password` is a thin handler over `auth_service.change_password()`, which verifies the current password with bcrypt and runs a parameterized `UPDATE`. The form submits via `fetch()` with the body wrapped in `URLSearchParams` (so the CSRF middleware's urlencoded parser accepts it), returning JSON for inline feedback. No schema change; the theme toggle stays frontend-only.
 
 ## Important Rules
 
@@ -136,6 +137,7 @@ Starlette's `add_middleware` prepends to its internal middleware list, so the *l
 - Never re-introduce unescaped reflection in `/search`. VULN-3 is closed by HTML-escaping every attacker-controllable sink (`q`, the result-row `username`/`email`, and the exception text) with `html.escape(..., quote=True)` before splicing; the escaping is permanent and must stay (output encoding, not input filtering — the raw values still live in the URL/DB).
 - Never re-add the `/download/db` route. VULN-6 is closed by removing the endpoint entirely; do not reintroduce it (authenticated or otherwise).
 - The dark-mode feature is purely frontend (CSS + 4 files: `styles.css`, `login.html`, `signup.html`, `dashboard.html`). Don't push theme state into the backend, the session, or the database.
+- The User Profile Page (`/profile`, `/profile/password`) is session-gated and must stay so. `change_password` in `auth_service.py` must keep its parameterized `SELECT`/`UPDATE` (VULN-1) and bcrypt verify/hash (VULN-5); the change-password form must keep its hidden `csrf_token` field (VULN-8) and submit urlencoded via `URLSearchParams`. Do not add a `created_at`/theme/profile column — the feature is intentionally schema-free, and dark mode stays frontend-only.
 
 ## Specification Hierarchy
 
@@ -150,5 +152,6 @@ Starlette's `add_middleware` prepends to its internal middleware list, so the *l
 9. `.claude/specs/reflected-xss-fix.md` + `.claude/specs/reflected-xss-fix-plan.md` — VULN-3 fix
 10. `.claude/specs/no-rate-limiting-fix.md` + `.claude/specs/no-rate-limiting-fix-plan.md` — VULN-7 fix
 11. `.claude/specs/csrf-fix.md` + `.claude/specs/csrf-fix-plan.md` — VULN-8 fix
+12. `docs/feature-user-profile-page.md` + `docs/plan-user-profile-page.md` — User Profile Page (v1.0.2 feature)
 
 Prompts that generated each spec/plan/implementation live under `docs/prompts/`.

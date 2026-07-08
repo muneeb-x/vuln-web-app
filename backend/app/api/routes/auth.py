@@ -209,6 +209,35 @@ async def welcome_page(request: Request):
     return HTMLResponse(content=page)
 
 
+@router.get("/profile")
+async def profile_page(request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    username = request.session.get("username", "")
+    email = request.session.get("email", "")
+
+    with open(os.path.join(TEMPLATE_DIR, "profile.html"), "r") as f:
+        page = f.read()
+
+    token = get_or_create_csrf_token(request)
+    page = page.replace("{{csrf_token}}", html.escape(token, quote=True))
+    page = page.replace("{{username}}", html.escape(username, quote=True))
+    page = page.replace("{{email}}", html.escape(email, quote=True))
+
+    return HTMLResponse(content=page)
+
+
+@router.post("/profile/password")
+async def profile_password_post(
+    request: Request,
+    current_password: str = Form(""),
+    new_password: str = Form(""),
+):
+    return auth_service.change_password(request, current_password, new_password)
+
+
 @router.get("/logout")
 async def logout(request: Request):
     """Destroy the session and redirect to the login page.

@@ -15,6 +15,7 @@ Closed vulnerabilities relevant to this file:
   per-call salt makes SQL equality matching impossible).
 """
 
+import re
 import sqlite3
 
 from starlette.requests import Request
@@ -22,6 +23,18 @@ from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 
 from app.db.session import get_db
 from app.core.security import hash_password, verify_password
+
+
+def password_meets_policy(password: str) -> bool:
+    if not password:
+        return False
+    return (
+        len(password) >= 8
+        and re.search(r"[a-z]", password) is not None
+        and re.search(r"[A-Z]", password) is not None
+        and re.search(r"[0-9]", password) is not None
+        and re.search(r"[^A-Za-z0-9]", password) is not None
+    )
 
 
 def signup(username: str, email: str, password: str):
@@ -156,3 +169,57 @@ def login(request: Request, username: str, password: str):
             content={"error": "Invalid username or password"},
             status_code=401,
         )
+
+
+def change_password(request: Request, current_password: str, new_password: str):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+
+    if not current_password or not new_password:
+        return JSONResponse(
+            content={"error": "Current and new password are required"},
+            status_code=400,
+        )
+
+    if not password_meets_policy(new_password):
+        return JSONResponse(
+            content={
+                "error": (
+                    "New password must be at least 8 characters and include an "
+                    "uppercase letter, a lowercase letter, a digit, and a special "
+                    "character"
+                )
+            },
+            status_code=400,
+        )
+
+    select_query = "SELECT * FROM users WHERE id = ?"
+    update_query = "UPDATE users SET password = ? WHERE id = ?"
+
+    conn = get_db()
+    try:
+        cursor = conn.execute(select_query, [user_id])
+        user = cursor.fetchone()
+        if not user:
+            return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+
+        if not verify_password(current_password, user["password"]):
+            return JSONResponse(
+                content={"error": "Current password is incorrect"},
+                status_code=401,
+            )
+
+        hashed = hash_password(new_password)
+        conn.execute(update_query, [hashed, user_id])
+        conn.commit()
+        return JSONResponse(
+            content={"success": True, "message": "Password updated successfully"}
+        )
+    except Exception:
+        return JSONResponse(
+            content={"error": "Could not update password"},
+            status_code=400,
+        )
+    finally:
+        conn.close()

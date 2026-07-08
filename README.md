@@ -138,6 +138,8 @@ The app starts at **http://localhost:3001**. The database file (`vulnerable_app.
 | GET | `/login` | Display login form | No |
 | POST | `/login` | Authenticate user (returns JSON) | No |
 | GET | `/welcome` | Protected dashboard | Yes |
+| GET | `/profile` | Authenticated profile page (view info + change password form) | Yes |
+| POST | `/profile/password` | Change the logged-in user's password (returns JSON) | Yes |
 | GET | `/logout` | Terminate session | No |
 | GET | `/search?q=` | Search users | No |
 
@@ -215,7 +217,7 @@ The dark mode toggle is **done** (shipped in v0.1.1). The remaining items are **
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | 0 | Dark Mode Toggle | Light/dark theme toggle on login, signup, and dashboard pages; preference saved in `localStorage`, restored before first paint to avoid FOUC, with `prefers-color-scheme` fallback. | **Done (v0.1.1)** |
-| 1 | User Profile Page | A page where authenticated users can view and save their personal information and account settings. This also moves the dark-mode preference from per-browser (`localStorage`) to **per-user** — stored on the account so the theme choice follows the user across browsers and devices. | Planned |
+| 1 | User Profile Page | Authenticated `/profile` page: view your username and email (read-only) and change your password (current-password check + bcrypt). CSRF-protected, rate-limited, no schema change. Dark-mode stays per-browser (`localStorage`). | **Done (v1.0.2)** |
 | 2 | Email Verification on Signup | During registration, send a confirmation email containing a verification token/link to confirm the address actually exists; the account is activated only after the user clicks the link. | Planned |
 | 3 | Password Strength Meter | A real-time indicator on the signup form that displays password strength and the acceptance criteria (length, complexity, character classes) as the user types. | Planned |
 | 4 | Change Password | A dedicated page that lets authenticated users change their password, verifying the current password before setting a new one. | Planned |
