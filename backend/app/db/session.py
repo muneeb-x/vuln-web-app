@@ -54,15 +54,44 @@ def init_db():
     - `password TEXT`: stores the bcrypt hash string (not the plaintext
       password and not a binary blob -- bcrypt.hashpw() returns bytes
       that we decode to UTF-8 in core/security.py).
+    - `is_verified INTEGER DEFAULT 0`: 0 = email not yet confirmed, 1 = verified.
+      Existing rows that predate the Email-Verification feature are grandfathered
+      to 1 by the migration below.
+    - `verification_token TEXT`: the active single-use email-verification token
+      (`secrets.token_urlsafe(32)`), or NULL when none is outstanding.
+    - `verification_token_expires REAL`: Unix epoch seconds after which the
+      token is dead, or NULL. Compared against `time.time()` on /verify.
     """
     conn = get_db()
     conn.execute(
         """CREATE TABLE IF NOT EXISTS users (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            email    TEXT,
-            password TEXT
+            id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+            username                   TEXT UNIQUE,
+            email                      TEXT,
+            password                   TEXT,
+            is_verified                INTEGER DEFAULT 0,
+            verification_token         TEXT,
+            verification_token_expires REAL
         )"""
     )
+
+    # Migrate older databases in place: add any missing columns.
+    # ALTER TABLE ADD COLUMN is used so a pre-existing DB from v1.0.0 is
+    # upgraded without losing rows. Each column is added only if absent.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    migrations = {
+        "is_verified": "ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0",
+        "verification_token": "ALTER TABLE users ADD COLUMN verification_token TEXT",
+        "verification_token_expires": "ALTER TABLE users ADD COLUMN verification_token_expires REAL",
+    }
+    for column, ddl in migrations.items():
+        if column not in existing:
+            conn.execute(ddl)
+            if column == "is_verified":
+                # Grandfather: accounts that predate email verification are
+                # treated as already verified, so the migration does not
+                # retroactively lock them behind the "verify your email" banner.
+                conn.execute("UPDATE users SET is_verified = 1")
+
     conn.commit()
     conn.close()

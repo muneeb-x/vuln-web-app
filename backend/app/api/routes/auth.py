@@ -29,13 +29,18 @@ Closed vulnerabilities relevant to this file:
 
 import os
 import html
+import logging
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.csrf import get_or_create_csrf_token
+from app.core import config
 from app.services import auth_service
+from app.services import verification_service
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -44,6 +49,12 @@ router = APIRouter()
 # Resolved at import time so the path is stable regardless of CWD.
 BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 TEMPLATE_DIR = os.path.join(BASE_DIR, "frontend", "templates")
+
+
+def _load_template(name: str) -> str:
+    """Read a template file from disk on every call (no caching, no engine)."""
+    with open(os.path.join(TEMPLATE_DIR, name), "r") as f:
+        return f.read()
 
 
 @router.get("/")
@@ -60,7 +71,15 @@ async def signup_page(request: Request):
     template engine) so live edits to the HTML files take effect on
     refresh. The CSRF token splice uses the same str.replace pattern as
     /welcome -- minimal infrastructure, easy for students to read.
+
+    Email-verification gate: signup creates an UNVERIFIED account and emails a
+    confirmation link, so it cannot work without SMTP. When email is not
+    configured we render the friendly setup page instead of a form that can't
+    succeed.
     """
+    if not config.is_email_configured():
+        return HTMLResponse(content=_load_template("email_not_configured.html"))
+
     with open(os.path.join(TEMPLATE_DIR, "signup.html"), "r") as f:
         page = f.read()
     # FIXED: CSRF closed -- splice the per-session token into the form's hidden field.
@@ -89,8 +108,83 @@ async def signup_post(
     The hidden `csrf_token` field is also POSTed but is consumed and
     validated by CSRFMiddleware before this handler runs; FastAPI's
     Form() ignores unknown form fields, so it transparently disappears.
+
+    Email-verification gate: refuse to create an account that could never be
+    verified. Defense in depth against a direct POST that skips the gated GET
+    /signup page -- same not-configured page, no row inserted.
     """
+    if not config.is_email_configured():
+        return HTMLResponse(content=_load_template("email_not_configured.html"))
+
     return auth_service.signup(username, email, password)
+
+
+@router.get("/check-email")
+async def check_email_page():
+    """Static "we sent you a verification link" page shown right after signup.
+
+    No user input is reflected here (intentionally generic -- it does not name
+    the address), so there is no sink to escape. Loaded fresh from disk like
+    every other template.
+    """
+    return HTMLResponse(content=_load_template("check_email.html"))
+
+
+@router.get("/verify")
+async def verify_email(request: Request):
+    """Consume an email-verification link.
+
+    Reads the high-entropy token from the query string and asks the service to
+    validate it. Renders a fixed, server-controlled outcome message -- the raw
+    token is NEVER reflected back into the page (VULN-3 posture). This is a GET
+    because the capability is the unguessable token in the link itself; the
+    POST-only CSRF/rate-limit middleware correctly ignore it.
+    """
+    token = request.query_params.get("token", "")
+    result = verification_service.verify_email_token(token)
+
+    if result["status"] == "ok":
+        user = result["user"]
+        request.session["user_id"] = user["id"]
+        request.session["username"] = user["username"]
+        request.session["email"] = user["email"]
+        return RedirectResponse(url="/welcome", status_code=302)
+
+    outcomes = {
+        "expired": (
+            "Link expired",
+            "This verification link has expired. Go to the login page, enter "
+            "your username and password, and use \"Resend verification email\".",
+        ),
+        "invalid": (
+            "Invalid link",
+            "This verification link is invalid or has already been used.",
+        ),
+    }
+    title, message = outcomes.get(result["status"], outcomes["invalid"])
+
+    page = _load_template("verify_result.html")
+    page = page.replace("{{title}}", html.escape(title, quote=True))
+    page = page.replace("{{message}}", html.escape(message, quote=True))
+    return HTMLResponse(content=page)
+
+
+@router.post("/verify/resend")
+async def verify_resend(
+    username: str = Form(""),
+    password: str = Form(""),
+):
+    """Re-send the verification email, gated on valid credentials.
+
+    Login is blocked until verification, so an unverified user has no session
+    to gate on. The login page calls this with the username + password the user
+    just entered; verification_service.resend_for_credentials() re-checks them
+    with bcrypt (the password is the authorization) and re-issues the link.
+    Thin handler -- same shape as login_post(). The hidden csrf_token and the
+    per-IP rate limit are enforced by middleware before this runs (it is a
+    POST); FastAPI's Form() ignores the extra csrf_token field.
+    """
+    return verification_service.resend_for_credentials(username, password)
 
 
 @router.get("/login")

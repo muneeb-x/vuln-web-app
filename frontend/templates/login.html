@@ -27,7 +27,6 @@
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-    <!-- Shared Header -->
     <header class="header">
         <div class="header-title">Security Vulnerability Lab</div>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
@@ -41,7 +40,6 @@
     </header>
 
     <div class="auth-container">
-        <!-- Left Panel -->
         <div class="auth-left">
             <div class="circle circle-1"></div>
             <div class="circle circle-2"></div>
@@ -59,13 +57,17 @@
             </div>
         </div>
 
-        <!-- Right Panel -->
         <div class="auth-right">
             <div class="form-container">
                 <h2 class="form-title">Sign In</h2>
                 <p class="form-subtitle">Enter your credentials to access the lab</p>
 
                 <div id="error-message" class="error-message" style="display: none;"></div>
+
+                <div id="resend-area" style="display: none; margin-bottom: 16px;">
+                    <button type="button" id="resend-btn" class="btn btn-primary">Resend verification email</button>
+                    <div id="resend-message" class="error-message" style="display: none; margin-top: 12px;"></div>
+                </div>
 
                 <form id="login-form">
                     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
@@ -88,15 +90,16 @@
     <script>
         const form = document.getElementById('login-form');
         const errorDiv = document.getElementById('error-message');
+        const resendArea = document.getElementById('resend-area');
+        const resendBtn = document.getElementById('resend-btn');
+        const resendMsg = document.getElementById('resend-message');
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             errorDiv.style.display = 'none';
+            resendArea.style.display = 'none';
+            resendMsg.style.display = 'none';
 
-            // Send as application/x-www-form-urlencoded (not multipart). The
-            // CSRF middleware only parses urlencoded bodies, so wrapping the
-            // FormData in URLSearchParams makes the browser set the matching
-            // Content-Type and the csrf_token field is validated correctly.
             const formData = new URLSearchParams(new FormData(form));
             const response = await fetch('/login', {
                 method: 'POST',
@@ -109,7 +112,27 @@
             } else {
                 errorDiv.textContent = data.error;
                 errorDiv.style.display = 'block';
+                if (data.unverified) {
+                    resendArea.style.display = 'block';
+                }
             }
+        });
+
+        resendBtn.addEventListener('click', async () => {
+            resendMsg.style.display = 'none';
+            const body = new URLSearchParams({
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value,
+                csrf_token: form.querySelector('input[name="csrf_token"]').value
+            });
+            try {
+                const response = await fetch('/verify/resend', { method: 'POST', body });
+                const data = await response.json();
+                resendMsg.textContent = data.message || data.error || 'Could not resend the email.';
+            } catch (err) {
+                resendMsg.textContent = 'Could not resend the email. Please try again.';
+            }
+            resendMsg.style.display = 'block';
         });
     </script>
 
@@ -120,7 +143,7 @@
 
             function reflect(theme) {
                 var nextAction = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-                var icon = theme === 'dark' ? '☀' : '🌙';
+                var icon = theme === 'dark' ? '\u2600' : '\U0001F319';
                 toggle.setAttribute('aria-label', nextAction);
                 var iconEl = toggle.querySelector('.theme-toggle-icon');
                 if (iconEl) iconEl.textContent = icon;
@@ -134,9 +157,7 @@
                 document.documentElement.setAttribute('data-theme', next);
                 try {
                     localStorage.setItem('theme', next);
-                } catch (e) {
-                    /* persistence unavailable — in-page state still flips */
-                }
+                } catch (e) {}
                 reflect(next);
             });
         })();

@@ -698,3 +698,46 @@ a:hover {
         margin-right: 8px;
     }
 }
+
+/* ============================================================
+ * Static notice pages (email-not-configured, check-email,
+ * verify-result). Reuses the existing auth surface/border/text
+ * custom properties so light/dark theming is automatic.
+ * ============================================================ */
+.notice-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 48px 20px;
+}
+
+.notice-card {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-soft);
+    border-radius: 12px;
+    padding: 32px;
+    max-width: 560px;
+    width: 100%;
+    text-align: center;
+}
+
+.notice-text {
+    color: var(--color-text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 12px 0;
+    text-align: left;
+}
+
+.notice-card code {
+    background: var(--color-bg-input);
+    border: 1px solid var(--color-border-soft);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+    color: var(--color-text-accent);
+}
+
+.notice-card .btn-primary {
+    margin-top: 8px;
+}
