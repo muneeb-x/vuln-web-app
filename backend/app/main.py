@@ -75,6 +75,7 @@ app.include_router(router)
 BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 app.mount("/static/css", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "static", "css")), name="css")
 app.mount("/static/images", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "static", "images")), name="images")
+app.mount("/static/uploads", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "static", "uploads")), name="uploads")
 
 # Create the users table if it doesn't exist. Idempotent -- safe across
 # restarts. Existing user rows are preserved.
