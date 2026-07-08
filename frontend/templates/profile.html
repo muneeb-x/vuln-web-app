@@ -67,6 +67,26 @@
             </div>
         </div>
 
+        <!-- Profile Picture (v2.0.1) -->
+        <div class="profile-card">
+            <h2 class="section-title">Profile Picture</h2>
+            <div class="profile-picture-wrapper">
+                <div class="profile-avatar" id="profile-avatar-container">
+                    <img id="profile-avatar-img" src="/static/uploads/{{profile_picture}}" alt="Profile picture" class="profile-avatar-img" style="{{profile_picture_present}}">
+                    <div id="profile-avatar-placeholder" class="profile-avatar-placeholder" style="{{profile_picture_absent}}">
+                        <span class="profile-avatar-initial">{{profile_initial}}</span>
+                    </div>
+                </div>
+                <div id="profile-picture-message" class="profile-message" role="status" aria-live="polite" style="display: none;"></div>
+                <div class="profile-picture-actions">
+                    <input type="file" id="profile-picture-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+                    <button type="button" class="btn btn-primary" id="profile-picture-upload-btn" style="width:auto;padding:8px 20px">Change Photo</button>
+                    <button type="button" class="btn btn-logout" id="profile-picture-remove-btn" style="{{profile_picture_remove_display}}">Remove</button>
+                </div>
+                <p class="form-subtitle" style="margin-top:8px;margin-bottom:0">PNG, JPEG, GIF, or WebP. Max 2 MB.</p>
+            </div>
+        </div>
+
         <!-- Change Password -->
         <div class="profile-card">
             <h2 class="section-title">Change Password</h2>
@@ -337,6 +357,107 @@
                     notify('Something went wrong. Please try again.', false);
                 }
             });
+        })();
+    </script>
+
+    <script>
+        // Profile Picture upload/remove (v2.0.1). The file is read client-side
+        // as a base64 data URI and sent via URLSearchParams (urlencoded) so the
+        // existing CSRF middleware, which only parses application/x-www-form-
+        // urlencoded bodies, validates the token without modification.
+        (function () {
+            var img = document.getElementById('profile-avatar-img');
+            var placeholder = document.getElementById('profile-avatar-placeholder');
+            var removeBtn = document.getElementById('profile-picture-remove-btn');
+            var uploadBtn = document.getElementById('profile-picture-upload-btn');
+            var fileInput = document.getElementById('profile-picture-input');
+            var msg = document.getElementById('profile-picture-message');
+
+            function showPicMsg(text, ok) {
+                msg.textContent = text;
+                msg.classList.remove('is-error', 'is-success');
+                msg.classList.add(ok ? 'is-success' : 'is-error');
+                msg.style.display = 'block';
+            }
+
+            function showImg(src) {
+                img.src = src;
+                img.style.display = '';
+                placeholder.style.display = 'none';
+                removeBtn.style.display = '';
+            }
+
+            function hideImg() {
+                img.style.display = 'none';
+                img.src = '';
+                placeholder.style.display = '';
+                removeBtn.style.display = 'none';
+            }
+
+            uploadBtn.addEventListener('click', function () {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', async function () {
+                var file = fileInput.files[0];
+                if (!file) return;
+
+                // Client-side size check (2 MB)
+                if (file.size > 2 * 1024 * 1024) {
+                    showPicMsg('File too large. Maximum size is 2 MB.', false);
+                    fileInput.value = '';
+                    return;
+                }
+
+                // Read as base64 data URI
+                var reader = new FileReader();
+                reader.onload = async function (e) {
+                    var dataUri = e.target.result;
+                    // Build the CSRF token from the FIRST form's hidden field
+                    // (all forms on this page share the same per-session token).
+                    var csrfEl = document.querySelector('input[name="csrf_token"]');
+                    var body = new URLSearchParams();
+                    body.set('csrf_token', csrfEl ? csrfEl.value : '');
+                    body.set('filename', file.name);
+                    body.set('data', dataUri);
+
+                    try {
+                        var res = await fetch('/profile/picture', { method: 'POST', body: body });
+                        var data = await res.json();
+                        if (data.success) {
+                            showImg('/static/uploads/' + data.profile_picture);
+                            showPicMsg('Profile picture updated.', true);
+                        } else {
+                            showPicMsg(data.error || 'Could not upload picture.', false);
+                        }
+                    } catch (err) {
+                        showPicMsg('Something went wrong. Please try again.', false);
+                    }
+                    fileInput.value = '';
+                };
+                reader.readAsDataURL(file);
+            });
+
+            if (removeBtn) {
+                removeBtn.addEventListener('click', async function () {
+                    var csrfEl = document.querySelector('input[name="csrf_token"]');
+                    var body = new URLSearchParams();
+                    body.set('csrf_token', csrfEl ? csrfEl.value : '');
+
+                    try {
+                        var res = await fetch('/profile/picture/delete', { method: 'POST', body: body });
+                        var data = await res.json();
+                        if (data.success) {
+                            hideImg();
+                            showPicMsg(data.message || 'Profile picture removed.', true);
+                        } else {
+                            showPicMsg(data.error || 'Could not remove picture.', false);
+                        }
+                    } catch (err) {
+                        showPicMsg('Something went wrong. Please try again.', false);
+                    }
+                });
+            }
         })();
     </script>
 

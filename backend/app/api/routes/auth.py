@@ -374,19 +374,20 @@ async def profile_page(request: Request):
     username = request.session.get("username", "")
     email = request.session.get("email", "")
 
-    # 2FA cards (Email OTP v1.0.6 + Authenticator-App TOTP v1.0.7): the session
-    # does not carry either flag, so read both for the cards' initial state
+    # 2FA cards (Email OTP v1.0.6 + Authenticator-App TOTP v1.0.7) and profile
+    # picture (v2.0.1): the session does not carry these, so read from DB
     # (parameterized SELECT -- VULN-1).
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT two_factor_enabled, totp_enabled FROM users WHERE id = ?",
+            "SELECT two_factor_enabled, totp_enabled, profile_picture FROM users WHERE id = ?",
             [user_id],
         ).fetchone()
     finally:
         conn.close()
     twofa_enabled = bool(row["two_factor_enabled"]) if row else False
     totp_enabled = bool(row["totp_enabled"]) if row else False
+    profile_picture = row["profile_picture"] if row and row["profile_picture"] else ""
 
     with open(os.path.join(TEMPLATE_DIR, "profile.html"), "r") as f:
         page = f.read()
@@ -399,6 +400,12 @@ async def profile_page(request: Request):
     # splicing (output encoding, same posture as the dashboard username).
     page = page.replace("{{username}}", html.escape(username, quote=True))
     page = page.replace("{{email}}", html.escape(email, quote=True))
+    page = page.replace("{{profile_picture}}", html.escape(profile_picture, quote=True))
+    page = page.replace("{{profile_initial}}", html.escape((username or "?")[0].upper(), quote=True))
+    has_pic = bool(profile_picture)
+    page = page.replace("{{profile_picture_present}}", "" if has_pic else "display:none")
+    page = page.replace("{{profile_picture_absent}}", "display:none" if has_pic else "")
+    page = page.replace("{{profile_picture_remove_display}}", "" if has_pic else "display:none")
 
     # Server-controlled "0"/"1" flags for the 2FA cards (not user input).
     page = page.replace("{{twofa_enabled}}", "1" if twofa_enabled else "0")
@@ -723,6 +730,71 @@ async def profile_password_post(
     ignores the extra csrf_token field.
     """
     return auth_service.change_password(request, current_password, new_password)
+
+
+@router.post("/profile/picture")
+async def profile_picture_post(
+    request: Request,
+    filename: str = Form(""),
+    data: str = Form(""),
+):
+    """Upload a profile picture for the logged-in user (v2.0.1).
+
+    The JS client reads the selected file, converts it to a base64 data URI
+    (using FileReader), and sends it as a urlencoded form field so the existing
+    CSRF middleware (which only parses application/x-www-form-urlencoded) still
+    validates the token. The server decodes the base64, validates magic bytes
+    (PNG/JPEG/GIF/WebP) and size (2 MB max), writes to
+    ``frontend/static/uploads/``, and updates the DB.
+
+    The hidden csrf_token and the per-IP rate limit are enforced by middleware
+    before this runs; FastAPI's Form() ignores the extra csrf_token field.
+    """
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+
+    if not filename or not data:
+        return JSONResponse(content={"error": "No file provided"}, status_code=400)
+
+    try:
+        if "," in data:
+            _, b64 = data.split(",", 1)
+        else:
+            b64 = data
+        import base64 as _b64
+        image_data = _b64.b64decode(b64)
+    except Exception:
+        return JSONResponse(
+            content={"error": "Invalid file data"},
+            status_code=400,
+        )
+
+    result = auth_service.upload_profile_picture(user_id, filename, image_data)
+    if result is None:
+        return JSONResponse(
+            content={"error": "File too large or unsupported type. Accepted: PNG, JPEG, GIF, WebP (max 2 MB)."},
+            status_code=400,
+        )
+
+    request.session["profile_picture"] = result
+    return JSONResponse(content={"success": True, "profile_picture": result})
+
+
+@router.post("/profile/picture/delete")
+async def profile_picture_delete(request: Request):
+    """Remove the logged-in user's profile picture (v2.0.1).
+
+    Session-gated. Deletes the file from disk and sets the DB column to NULL.
+    The hidden csrf_token and per-IP rate limit are enforced by middleware.
+    """
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+
+    auth_service.delete_profile_picture(user_id)
+    request.session.pop("profile_picture", None)
+    return JSONResponse(content={"success": True, "message": "Profile picture removed."})
 
 
 @router.get("/auth/google/login")

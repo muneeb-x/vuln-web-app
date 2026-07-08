@@ -15,7 +15,9 @@ Closed vulnerabilities relevant to this file:
   per-call salt makes SQL equality matching impossible).
 """
 
+import os
 import re
+import secrets
 import sqlite3
 
 from starlette.requests import Request
@@ -28,6 +30,35 @@ from app.services import verification_service
 from app.services import lockout_service
 from app.services import otp_service
 from app.services import totp_service
+
+# Upload directory for profile pictures: <repo>/frontend/static/uploads/
+UPLOAD_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "frontend", "static", "uploads"
+)
+_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB
+
+
+def _is_allowed_image(data: bytes) -> bool:
+    """Check magic bytes for common image formats. Pure-stdlib, no Pillow needed."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True  # PNG
+    if data.startswith(b"\xff\xd8\xff"):
+        return True  # JPEG
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return True  # GIF
+    if len(data) >= 12 and data[0:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True  # WebP
+    return False
+
+
+def _safe_picture_filename(user_id: int, filename: str) -> str:
+    """Generate a safe filename: ``{user_id}_{random_hex}{ext}``."""
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        ext = ".png"
+    return f"{user_id}_{secrets.token_hex(8)}{ext}"
 
 
 def password_meets_policy(password: str) -> bool:
@@ -410,3 +441,85 @@ def change_password(request: Request, current_password: str, new_password: str):
         )
     finally:
         conn.close()
+
+
+def upload_profile_picture(user_id: int, filename: str, data: bytes) -> str | None:
+    """Save a profile picture for the given user.
+
+    Validates file size (2 MB max) and magic bytes (PNG/JPEG/GIF/WebP), then
+    writes to ``frontend/static/uploads/`` with a safe generated filename. The
+    old picture (if any) is deleted from disk. Updates the ``profile_picture``
+    column in the users table.
+
+    Returns the stored filename (e.g. ``42_abcd1234.png``) on success, or
+    ``None`` on size/type rejection.
+    """
+    if len(data) > _MAX_FILE_SIZE:
+        return None
+
+    if not _is_allowed_image(data):
+        return None
+
+    safe_name = _safe_picture_filename(user_id, filename)
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filepath = os.path.join(UPLOAD_DIR, safe_name)
+    with open(filepath, "wb") as f:
+        f.write(data)
+
+    conn = get_db()
+    old_path = None
+    try:
+        row = conn.execute(
+            "SELECT profile_picture FROM users WHERE id = ?", [user_id]
+        ).fetchone()
+        old_path = row["profile_picture"] if row else None
+        conn.execute(
+            "UPDATE users SET profile_picture = ? WHERE id = ?",
+            [safe_name, user_id],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Delete old file after successful DB update
+    if old_path:
+        old_filepath = os.path.join(UPLOAD_DIR, old_path)
+        try:
+            if os.path.exists(old_filepath):
+                os.remove(old_filepath)
+        except OSError:
+            pass
+
+    return safe_name
+
+
+def delete_profile_picture(user_id: int) -> bool:
+    """Remove the user's profile picture from disk and set the DB column to NULL.
+
+    Returns True on success (even if no picture was set).
+    """
+    conn = get_db()
+    old_path = None
+    try:
+        row = conn.execute(
+            "SELECT profile_picture FROM users WHERE id = ?", [user_id]
+        ).fetchone()
+        old_path = row["profile_picture"] if row else None
+        conn.execute(
+            "UPDATE users SET profile_picture = NULL WHERE id = ?",
+            [user_id],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    if old_path:
+        old_filepath = os.path.join(UPLOAD_DIR, old_path)
+        try:
+            if os.path.exists(old_filepath):
+                os.remove(old_filepath)
+        except OSError:
+            pass
+
+    return True

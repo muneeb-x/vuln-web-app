@@ -95,8 +95,11 @@ def init_db():
       secret; 0 while disabled or while a secret is pending (generated but not yet
       confirmed). Defaults to 0, so existing rows need no grandfather UPDATE.
     - `totp_last_step INTEGER`: the last accepted TOTP time-step counter, for
-      replay protection (a code already used cannot be reused inside its window);
-      NULL until the first successful verify.
+        replay protection (a code already used cannot be reused inside its window);
+        NULL until the first successful verify.
+    - `profile_picture TEXT`: filename of the user's uploaded profile picture,
+        stored under frontend/static/uploads/. NULL when no picture is set.
+        (User-Profile-Picture feature, v2.0.1)
     """
     conn = get_db()
     conn.execute(
@@ -121,7 +124,8 @@ def init_db():
             otp_last_sent              REAL,
             totp_secret                TEXT,
             totp_enabled               INTEGER DEFAULT 0,
-            totp_last_step             INTEGER
+            totp_last_step             INTEGER,
+            profile_picture            TEXT
         )"""
     )
 
@@ -160,6 +164,10 @@ def init_db():
         "totp_secret": "ALTER TABLE users ADD COLUMN totp_secret TEXT",
         "totp_enabled": "ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0",
         "totp_last_step": "ALTER TABLE users ADD COLUMN totp_last_step INTEGER",
+        # User-Profile-Picture feature (v2.0.1): one nullable TEXT column.
+        # No grandfather UPDATE needed -- NULL is the correct default meaning
+        # "no picture", and existing rows are unaffected.
+        "profile_picture": "ALTER TABLE users ADD COLUMN profile_picture TEXT",
     }
     for column, ddl in migrations.items():
         if column not in existing:
