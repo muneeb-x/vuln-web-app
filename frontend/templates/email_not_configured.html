@@ -27,7 +27,6 @@
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-    <!-- Shared Header -->
     <header class="header">
         <div class="header-title">Security Vulnerability Lab</div>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
@@ -40,22 +39,18 @@
         </div>
     </header>
 
-    <!-- Static notice page: no user input is reflected here (VULN-2/3 N/A). -->
     <main class="notice-wrap">
         <div class="notice-card">
             <h2 class="form-title">Sign-up isn't available yet</h2>
             <p class="form-subtitle">
                 New accounts need email verification, and this copy of the app
-                doesn't have an email (SendGrid) sender configured yet.
+                doesn't have an email (SMTP) server configured yet.
             </p>
             <p class="notice-text">
-                To enable sign-up, an operator must set <code>SENDGRID_API_KEY</code>
-                and <code>SENDGRID_FROM</code> (a SendGrid-verified sender address)
-                in the environment — locally in <code>.env</code> (copied from
-                <code>.env.example</code>), or as environment variables on the host
-                (e.g. Render). The full step-by-step is in the README's
-                "Email Verification — Setup" section. After setting the values,
-                restart the app.
+                To enable sign-up, an operator must copy <code>.env.example</code>
+                to <code>.env</code> and fill in <code>SMTP_HOST</code>,
+                <code>SMTP_USER</code>, and <code>SMTP_PASSWORD</code> (a Gmail
+                App Password works well). After setting the values, restart the app.
             </p>
             <p class="notice-text">
                 Already have an account? You can still log in.
@@ -68,26 +63,19 @@
         (function () {
             var toggle = document.getElementById('theme-toggle');
             if (!toggle) return;
-
             function reflect(theme) {
                 var nextAction = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-                var icon = theme === 'dark' ? '☀' : '🌙';
+                var icon = theme === 'dark' ? '\u2600' : '\U0001F319';
                 toggle.setAttribute('aria-label', nextAction);
                 var iconEl = toggle.querySelector('.theme-toggle-icon');
                 if (iconEl) iconEl.textContent = icon;
             }
-
             reflect(document.documentElement.getAttribute('data-theme') || 'light');
-
             toggle.addEventListener('click', function () {
                 var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
                 var next = current === 'dark' ? 'light' : 'dark';
                 document.documentElement.setAttribute('data-theme', next);
-                try {
-                    localStorage.setItem('theme', next);
-                } catch (e) {
-                    /* persistence unavailable — in-page state still flips */
-                }
+                try { localStorage.setItem('theme', next); } catch (e) {}
                 reflect(next);
             });
         })();

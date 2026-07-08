@@ -27,7 +27,6 @@
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-    <!-- Shared Header -->
     <header class="header">
         <div class="header-title">Security Vulnerability Lab</div>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
@@ -40,7 +39,6 @@
         </div>
     </header>
 
-    <!-- Static notice page: no user input is reflected here (VULN-2/3 N/A). -->
     <main class="notice-wrap">
         <div class="notice-card">
             <h2 class="form-title">Check your inbox</h2>
@@ -65,26 +63,19 @@
         (function () {
             var toggle = document.getElementById('theme-toggle');
             if (!toggle) return;
-
             function reflect(theme) {
                 var nextAction = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-                var icon = theme === 'dark' ? '☀' : '🌙';
+                var icon = theme === 'dark' ? '\u2600' : '\U0001F319';
                 toggle.setAttribute('aria-label', nextAction);
                 var iconEl = toggle.querySelector('.theme-toggle-icon');
                 if (iconEl) iconEl.textContent = icon;
             }
-
             reflect(document.documentElement.getAttribute('data-theme') || 'light');
-
             toggle.addEventListener('click', function () {
                 var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
                 var next = current === 'dark' ? 'light' : 'dark';
                 document.documentElement.setAttribute('data-theme', next);
-                try {
-                    localStorage.setItem('theme', next);
-                } catch (e) {
-                    /* persistence unavailable — in-page state still flips */
-                }
+                try { localStorage.setItem('theme', next); } catch (e) {}
                 reflect(next);
             });
         })();
